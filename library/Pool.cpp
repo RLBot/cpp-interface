@@ -40,7 +40,7 @@ Pool<T>::Ref &Pool<T>::Ref::operator= (Ref const &that_) noexcept
 
 		// this is a new reference
 		if (that_.m_object)
-			that_.m_object->first.fetch_add (1, std::memory_order_relaxed);
+			that_.m_object->count.fetch_add (1, std::memory_order_relaxed);
 
 		m_pool   = that_.m_pool;
 		m_object = that_.m_object;
@@ -81,32 +81,32 @@ template <typename T>
 T *Pool<T>::Ref::operator->() noexcept
 {
 	assert (m_object);
-	assert (m_object->first.load (std::memory_order_relaxed) > 0);
-	return &m_object->second;
+	assert (m_object->count.load (std::memory_order_relaxed) > 0);
+	return &m_object->ref;
 }
 
 template <typename T>
 T const *Pool<T>::Ref::operator->() const noexcept
 {
 	assert (m_object);
-	assert (m_object->first.load (std::memory_order_relaxed) > 0);
-	return &m_object->second;
+	assert (m_object->count.load (std::memory_order_relaxed) > 0);
+	return &m_object->ref;
 }
 
 template <typename T>
 T &Pool<T>::Ref::operator* () noexcept
 {
 	assert (m_object);
-	assert (m_object->first.load (std::memory_order_relaxed) > 0);
-	return m_object->second;
+	assert (m_object->count.load (std::memory_order_relaxed) > 0);
+	return m_object->ref;
 }
 
 template <typename T>
 T const &Pool<T>::Ref::operator* () const noexcept
 {
 	assert (m_object);
-	assert (m_object->first.load (std::memory_order_relaxed) > 0);
-	return m_object->second;
+	assert (m_object->count.load (std::memory_order_relaxed) > 0);
+	return m_object->ref;
 }
 
 template <typename T>
@@ -122,11 +122,49 @@ void Pool<T>::Ref::reset () noexcept
 	else if (m_object) [[unlikely]]
 	{
 		// not going back into a pool; so manage reference count ourself
-		assert (m_object->first.load (std::memory_order_relaxed) > 0);
-		m_object->first.fetch_sub (1, std::memory_order_relaxed);
+		assert (m_object->count.load (std::memory_order_relaxed) > 0);
+		m_object->count.fetch_sub (1, std::memory_order_relaxed);
 		m_object.reset ();
 	}
 }
+
+#ifndef _WIN32
+template <typename T>
+std::uintptr_t Pool<T>::Ref::tag () const noexcept
+{
+	if (!m_object)
+		return 0;
+
+	return m_object->tag;
+}
+
+template <typename T>
+void Pool<T>::Ref::setTag (std::uintptr_t const tag_) noexcept
+{
+	if (!m_object)
+		return;
+
+	m_object->tag = tag_;
+}
+
+template <typename T>
+bool Pool<T>::Ref::preferred () const noexcept
+{
+	if (!m_object)
+		return false;
+
+	return m_object->preferred;
+}
+
+template <typename T>
+void Pool<T>::Ref::setPreferred (bool const preferred_) noexcept
+{
+	if (!m_object)
+		return;
+
+	m_object->preferred = preferred_;
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////
 template <typename T>
@@ -163,12 +201,24 @@ Pool<T>::Ref Pool<T>::getObject () noexcept
 
 	{
 		auto const lock = std::scoped_lock (m_mutex);
-		if (!m_pool.empty ()) [[likely]]
+#ifndef _WIN32
+		if (!m_preferredPool.empty ()) [[likely]]
 		{
-			// collect object from pool
+			// collect object from preferred pool
+			object = std::move (m_preferredPool.back ());
+			m_preferredPool.pop_back ();
+			assert (object->count.load (std::memory_order_relaxed) == 0);
+			assert (object->preferred);
+		}
+		else
+#endif
+		    if (!m_pool.empty ()) [[likely]]
+		{
+			// collect object from preferred pool
 			object = std::move (m_pool.back ());
 			m_pool.pop_back ();
-			assert (object->first.load (std::memory_order_relaxed) == 0);
+			assert (object->count.load (std::memory_order_relaxed) == 0);
+			assert (!object->preferred);
 		}
 		else
 		{
@@ -178,9 +228,9 @@ Pool<T>::Ref Pool<T>::getObject () noexcept
 	}
 
 	if constexpr (std::is_same_v<T, flatbuffers::FlatBufferBuilder>)
-		object->second.Clear ();
+		object->ref.Clear ();
 
-	object->first.fetch_add (1, std::memory_order_relaxed);
+	object->count.fetch_add (1, std::memory_order_relaxed);
 	return {this->shared_from_this (), std::move (object)};
 }
 
@@ -189,17 +239,23 @@ void Pool<T>::putObject (typename Ref::CountedRef object_) noexcept
 {
 	// check if we are the last reference
 	assert (object_);
-	assert (object_->first.load (std::memory_order_relaxed) > 0);
-	if (object_->first.fetch_sub (1, std::memory_order_relaxed) > 1)
+	assert (object_->count.load (std::memory_order_relaxed) > 0);
+	if (object_->count.fetch_sub (1, std::memory_order_relaxed) > 1)
 		return;
 
-	assert (object_->first.load (std::memory_order_relaxed) == 0);
+	assert (object_->count.load (std::memory_order_relaxed) == 0);
 
 	// recycle object
 	ZoneScopedNS ("putObject", 16);
 	auto const lock = std::scoped_lock (m_mutex);
+
+#ifdef _WIN32
 	m_pool.emplace_back (std::move (object_));
 	m_watermark = std::max (m_watermark, m_pool.size ());
+#else
+	(object_->preferred ? m_preferredPool : m_pool).emplace_back (std::move (object_));
+	m_watermark = std::max (m_watermark, m_preferredPool.size () + m_pool.size ());
+#endif
 }
 
 template class rlbot::detail::Pool<Buffer>;

@@ -19,14 +19,21 @@ class BotManagerImpl;
 class RLBotCPP_API BotManagerBase
 {
 public:
+	/// @brief Destructor
+	/// Waits for service threads to finish, but doesn't request termination
+	/// You should call terminate() first if you don't want to wait for server-initiated shutdown
 	virtual ~BotManagerBase () noexcept;
 
 	/// @brief Run bot manager
 	/// @param host_ RLBotServer address
 	/// @param port_ RLBotServer port
 	/// @param agentId_ Agent id for connection
+	/// @param ballPrediction_ Whether ball prediction is requested
 	/// @return Whether bot manager was successfully started
-	bool run (char const *host_, char const *port_, char const *agentId_) noexcept;
+	bool run (char const *host_,
+	    char const *port_,
+	    char const *agentId_,
+	    bool ballPrediction_) noexcept;
 
 	/// @brief Request bot manager to terminate
 	void terminate () noexcept;

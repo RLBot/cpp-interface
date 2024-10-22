@@ -1,6 +1,7 @@
 #include "Log.h"
 
 #ifdef _WIN32
+#include <WinSock2.h>
 #include <Windows.h>
 #endif
 
@@ -51,12 +52,12 @@ std::mutex stdoutMutex;
 std::mutex stderrMutex;
 }
 
-char const *rlbot::detail::errorMessage () noexcept
+char const *rlbot::detail::errorMessage (bool const sock_) noexcept
 {
 #ifdef _WIN32
 	thread_local std::array<char, 1024> message;
 
-	auto const ec = GetLastError ();
+	auto const ec = sock_ ? WSAGetLastError () : GetLastError ();
 
 	auto size = FormatMessageA (
 	    FORMAT_MESSAGE_FROM_SYSTEM, nullptr, ec, 0, message.data (), message.size (), nullptr);
@@ -69,6 +70,7 @@ char const *rlbot::detail::errorMessage () noexcept
 
 	return message.data ();
 #else
+	(void)sock_;
 	return std::strerror (errno);
 #endif
 }
@@ -124,12 +126,12 @@ void rlbot::detail::info (char const *format_, ...) noexcept
 	va_end (ap);
 }
 
+#ifndef NDEBUG
 void rlbot::detail::debug (char const *format_, ...) noexcept
 {
 	if (logLevel < LogLevel::Debug)
 		return;
 
-#ifndef NDEBUG
 	va_list ap;
 
 	va_start (ap, format_);
@@ -140,7 +142,5 @@ void rlbot::detail::debug (char const *format_, ...) noexcept
 		std::fflush (stdout);
 	}
 	va_end (ap);
-#else
-	(void)format_;
-#endif
 }
+#endif

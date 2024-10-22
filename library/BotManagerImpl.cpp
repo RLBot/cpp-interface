@@ -2,30 +2,37 @@
 
 #include "Log.h"
 
+#include <cstdint>
 #include <tracy/Tracy.hpp>
+
+#ifdef _WIN32
+#include <WS2tcpip.h>
+#else
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <unistd.h>
+int (&closesocket) (int) = ::close;
+#endif
 
 #include <algorithm>
 #include <cassert>
-#include <charconv>
 #include <chrono>
 #include <climits>
 #include <cstdlib>
-#include <functional>
+#include <cstring>
 #include <limits>
-#include <random>
 #include <ranges>
-#include <string_view>
-#include <thread>
-#include <unordered_set>
-#include <vector>
-using namespace std::chrono_literals;
 
 using namespace rlbot::detail;
 
 namespace
 {
 /// @brief Socket buffer large enough to hold at least 4 messages
-constexpr auto SOCKET_BUFFER_SIZE = 4 * std::numeric_limits<std::uint16_t>::max ();
+constexpr auto SOCKET_BUFFER_SIZE = 4 * (std::numeric_limits<std::uint16_t>::max () + 1u);
+
+constexpr auto COMPLETION_KEY_SOCKET      = 0;
+constexpr auto COMPLETION_KEY_WRITE_QUEUE = 1;
+constexpr auto COMPLETION_KEY_QUIT        = 2;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -38,9 +45,22 @@ BotManagerImpl::BotManagerImpl (
     std::unique_ptr<Bot> (&spawn_) (int, int, std::string) noexcept) noexcept
     : m_spawn (spawn_)
 {
+	// initialize buffer pools
+	for (unsigned i = 0; auto &pool : m_bufferPools)
+		pool = Pool<Buffer>::create ("Buffer " + std::to_string (i++));
+
+#ifdef _WIN32
+	m_inOverlapped.hEvent  = nullptr;
+	m_outOverlapped.hEvent = nullptr;
+#else
+	m_inOverlapped         = COMPLETION_KEY_SOCKET;
+	m_outOverlapped        = COMPLETION_KEY_SOCKET;
+	m_writeQueueOverlapped = COMPLETION_KEY_WRITE_QUEUE;
+	m_quitOverlapped       = COMPLETION_KEY_QUIT;
+#endif
 }
 
-bool rlbot::detail::BotManagerImpl::run (char const *const host_, char const *const port_) noexcept
+bool BotManagerImpl::run (char const *const host_, char const *const port_) noexcept
 {
 	if (m_running.load (std::memory_order_relaxed))
 	{
@@ -48,75 +68,270 @@ bool rlbot::detail::BotManagerImpl::run (char const *const host_, char const *co
 		return false;
 	}
 
+#ifdef _WIN32
 	if (!m_wsaData.init ())
-		return false;
-
-	m_readerEvent = Event::create ();
-	m_writerEvent = Event::create ();
-	if (!m_readerEvent || !m_writerEvent)
-		return false;
-
-	// resolve host/port
-	auto const addr = SockAddr::lookup (host_, port_);
-	if (!addr.has_value ())
 	{
-		error ("Failed to lookup [%s]:%s\n", host_, port_);
+		terminate ();
+		join ();
 		return false;
 	}
+#endif
 
-	m_sock = TCPSocket::create (addr->family ());
-	if (!m_sock || !m_sock.connect (addr.value ()) || !m_sock.setNoDelay ())
+	{
+		// resolve host/port
+		sockaddr_storage addr;
+		socklen_t addrLen = sizeof (addr);
+		if (!resolve (host_, port_, reinterpret_cast<sockaddr &> (addr), addrLen))
+		{
+			error ("Failed to lookup [%s]:%s\n", host_, port_);
+			terminate ();
+			join ();
+			return false;
+		}
+
+		m_sock = ::socket (addr.ss_family, SOCK_STREAM, 0);
+		if (m_sock == INVALID_SOCKET)
+		{
+			error ("socket: %s\n", errorMessage (true));
+			terminate ();
+			join ();
+			return false;
+		}
+
+		if (::connect (m_sock, reinterpret_cast<sockaddr const *> (&addr), addrLen) != 0)
+		{
+			error ("connect: %s\n", errorMessage (true));
+			terminate ();
+			join ();
+			return false;
+		}
+	}
+
+	{
+		int const noDelay = 1;
+		if (::setsockopt (m_sock,
+		        IPPROTO_TCP,
+		        TCP_NODELAY,
+		        reinterpret_cast<char const *> (&noDelay),
+		        sizeof (noDelay)) != 0) [[unlikely]]
+		{
+			error ("setsockopt(TCP_NODELAY, 1): %s\n", errorMessage (true));
+			terminate ();
+			join ();
+			return false;
+		}
+	}
+
+	{
+		auto const size = static_cast<int> (SOCKET_BUFFER_SIZE);
+		if (::setsockopt (m_sock,
+		        SOL_SOCKET,
+		        SO_RCVBUF,
+		        reinterpret_cast<char const *> (&size),
+		        sizeof (size)) != 0) [[unlikely]]
+		{
+			error ("setsockopt(SO_RCVBUF, %d): %s\n", size, errorMessage (true));
+			terminate ();
+			join ();
+			return false;
+		}
+
+		if (::setsockopt (m_sock,
+		        SOL_SOCKET,
+		        SO_SNDBUF,
+		        reinterpret_cast<char const *> (&size),
+		        sizeof (size)) != 0) [[unlikely]]
+		{
+			error ("setsockopt(SO_SNDBUF, %d): %s\n", size, errorMessage (true));
+			terminate ();
+			join ();
+			return false;
+		}
+	}
+
+#ifdef _WIN32
+	m_iocpHandle = CreateIoCompletionPort (
+	    reinterpret_cast<HANDLE> (m_sock), nullptr, COMPLETION_KEY_SOCKET, 0);
+	if (!m_iocpHandle)
+	{
+		terminate ();
+		join ();
 		return false;
+	}
+#else
+	{
+		auto ring     = std::make_unique<io_uring> ();
+		auto const rc = io_uring_queue_init (64, ring.get (), 0);
+		if (rc < 0)
+		{
+			error ("io_uring_queue_init: %s\n", std::strerror (-rc));
+			terminate ();
+			join ();
+			return false;
+		}
 
-	m_sockEvent = Event::create (m_sock);
-	if (!m_sockEvent)
-		return false;
+		m_ring = std::unique_ptr<io_uring, void (*) (io_uring *)> (
+		    ring.release (), &io_uring_queue_exit);
+	}
 
-	m_sock.setRecvBufferSize (2 * BUFFER_SIZE);
-	m_sock.setSendBufferSize (2 * BUFFER_SIZE);
+	{
+		auto const probe = io_uring_get_probe_ring (m_ring.get ());
+		if (!probe)
+			error ("io_uring_get_probe_ring: failed to probe\n");
+		else
+		{
+			if (io_uring_opcode_supported (probe, IORING_OP_READ))
+				m_ringRead = true;
+
+			if (io_uring_opcode_supported (probe, IORING_OP_WRITE))
+				m_ringWrite = true;
+
+			io_uring_free_probe (probe);
+		}
+	}
+
+	{
+		auto const rc = io_uring_register_files (m_ring.get (), &m_sock, 1);
+		if (rc < 0)
+		{
+			// doesn't work on WSL?
+			error ("io_uring_register_files: %s\n", std::strerror (-rc));
+			m_ringSocketFd   = m_sock;
+			m_ringSocketFlag = 0;
+		}
+		else
+		{
+			m_ringSocketFd   = 0;
+			m_ringSocketFlag = IOSQE_FIXED_FILE;
+		}
+	}
+
+	{
+		// preallocate some buffers to register
+		std::vector<Pool<Buffer>::Ref> buffers;
+		std::vector<iovec> iovs;
+		buffers.reserve (PREALLOCATED_BUFFERS);
+		for (unsigned i = 0; i < PREALLOCATED_BUFFERS; ++i)
+		{
+			auto &buffer = buffers.emplace_back (getBuffer ());
+			auto &iov    = iovs.emplace_back ();
+			iov.iov_base = buffer->data ();
+			iov.iov_len  = buffer->size ();
+
+			buffer.setTag (i);
+			buffer.setPreferred (true);
+		}
+
+		auto const rc = io_uring_register_buffers (m_ring.get (), iovs.data (), iovs.size ());
+		if (rc < 0)
+		{
+			error ("io_uring_register_buffers: %s\n", std::strerror (-rc));
+			terminate ();
+			join ();
+			return false;
+		}
+	}
+#endif
 
 	m_outputQueue.reserve (128);
 
-	m_readerThread = std::thread (&BotManagerImpl::readerService, this);
-	m_writerThread = std::thread (&BotManagerImpl::writerService, this);
+	for (unsigned i = 0; i < 2; ++i)
+		m_serviceThreads.emplace_back (&BotManagerImpl::serviceThread, this);
+
+	m_inBuffer = getBuffer ();
+
+	requestRead ();
 
 	m_running.store (true, std::memory_order_relaxed);
 
 	return true;
 }
 
-void rlbot::detail::BotManagerImpl::waitForWriterIdle () noexcept
+void BotManagerImpl::waitForWriterIdle () noexcept
 {
-	auto lock = std::unique_lock (m_writerIdleMutex);
-	while (!m_writerIdle.load (std::memory_order_relaxed))
+	auto lock = std::unique_lock (m_writerMutex);
+	while (!m_writerIdle)
 		m_writerIdleCv.wait (lock);
 }
 
-void rlbot::detail::BotManagerImpl::terminate () noexcept
+void BotManagerImpl::terminate () noexcept
 {
-	m_writerIdle.store (true, std::memory_order_relaxed);
+	{
+		auto const lock = std::scoped_lock (m_writerMutex);
+		m_writerIdle    = true;
+	}
+
 	m_writerIdleCv.notify_all ();
 
 	m_quit.store (true, std::memory_order_relaxed);
-	m_readerEvent.signal ();
-	m_writerEvent.signal ();
+#ifdef _WIN32
+	if (m_iocpHandle)
+	{
+		auto const rc = PostQueuedCompletionStatus (m_iocpHandle, 0, COMPLETION_KEY_QUIT, nullptr);
+		if (!rc)
+			error ("PostQueuedCompletionStatus: %s\n", errorMessage ());
+	}
+#else
+	if (m_ring)
+	{
+		auto lock = std::unique_lock (m_ringSQMutex);
+
+		auto const sqe = io_uring_get_sqe (m_ring.get ());
+		assert (sqe);
+		if (!sqe)
+		{
+			lock.unlock ();
+			error ("io_uring_get_sqe: Queue is full\n");
+			terminate ();
+			return;
+		}
+
+		io_uring_prep_nop (sqe);
+
+		io_uring_sqe_set_data (sqe, &m_quitOverlapped);
+
+		auto const rc = io_uring_submit (m_ring.get ());
+		lock.unlock ();
+		if (rc <= 0)
+		{
+			if (rc < 0)
+				error ("io_uring_submit: %s\n", std::strerror (-rc));
+			else
+				error ("io_uring_submit: not submitted\n");
+			terminate ();
+		}
+	}
+#endif
 }
 
-void rlbot::detail::BotManagerImpl::join () noexcept
+void BotManagerImpl::join () noexcept
 {
 	if (m_running.load (std::memory_order_relaxed))
 	{
-		m_readerThread.join ();
-		m_writerThread.join ();
+		for (auto &thread : m_serviceThreads)
+			thread.join ();
+		m_serviceThreads.clear ();
 	}
 
 	clearBots ();
 
-	m_readerEvent = {};
-	m_writerEvent = {};
+	if (m_sock != INVALID_SOCKET)
+	{
+		if (::closesocket (m_sock) != 0)
+			error ("closesocket: %s\n", errorMessage (true));
+		m_sock = INVALID_SOCKET;
+	}
 
-	m_sock      = {};
-	m_sockEvent = {};
+#ifdef _WIN32
+	if (m_iocpHandle)
+	{
+		if (!CloseHandle (m_iocpHandle))
+			error ("CloseHandle: %s\n", errorMessage ());
+		m_iocpHandle = nullptr;
+	}
+#else
+	m_ring.reset ();
+#endif
 
 	m_outputQueue.clear ();
 
@@ -135,7 +350,7 @@ Message BotManagerImpl::buildMessage (MessageType type_,
 		return {};
 	}
 
-	auto buffer = m_bufferPool->getObject ();
+	auto buffer = getBuffer ();
 	assert (buffer->size () >= size + 4);
 
 	// encode header
@@ -156,20 +371,69 @@ void BotManagerImpl::enqueueMessage (Message message_) noexcept
 	if (!message_) [[unlikely]]
 		return;
 
-	m_writerIdle.store (false, std::memory_order_relaxed);
-
+	bool fastPath = false;
 	{
-		auto const lock = std::scoped_lock (m_outputQueueMutex);
+		auto lock    = std::unique_lock (m_writerMutex);
+		m_writerIdle = false;
 		m_outputQueue.emplace_back (message_);
+
+		if (m_outputQueue.size () == 1)
+		{
+			assert (m_iov.empty ());
+			fastPath = true;
+			requestWriteLocked (lock);
+		}
 	}
 
-	m_writerEvent.signal ();
+	if (!fastPath)
+	{
+#if _WIN32
+		auto const rc =
+		    PostQueuedCompletionStatus (m_iocpHandle, 0, COMPLETION_KEY_WRITE_QUEUE, nullptr);
+		if (!rc)
+		{
+			error ("PostQueuedCompletionStatus: %s\n", errorMessage ());
+			terminate ();
+		}
+#else
+		auto lock = std::unique_lock (m_ringSQMutex);
 
-	if (message_.type () == MessageType::MatchComm) [[unlikely]]
+		auto const sqe = io_uring_get_sqe (m_ring.get ());
+		assert (sqe);
+		if (!sqe)
+		{
+			lock.unlock ();
+			error ("io_uring_get_sqe: Queue is full\n");
+			terminate ();
+			return;
+		}
+
+		io_uring_prep_nop (sqe);
+
+		io_uring_sqe_set_data (sqe, &m_writeQueueOverlapped);
+
+		auto const rc = io_uring_submit (m_ring.get ());
+		lock.unlock ();
+		if (rc <= 0)
+		{
+			if (rc < 0)
+				error ("io_uring_submit: %s\n", std::strerror (-rc));
+			else
+				error ("io_uring_submit: not submitted\n");
+			terminate ();
+		}
+#endif
+	}
+
+	if (message_.type () == MessageType::MatchComm && !m_bots.empty ()) [[unlikely]]
 	{
 		// send to other bots in this manager
-		for (auto &[_, context] : m_bots)
-			context.addMatchComm (message_);
+		for (auto &bot : m_bots | std::views::drop (1))
+			bot.addMatchComm (message_, true);
+
+		auto &bot = m_bots.front ();
+		bot.addMatchComm (message_, false);
+		bot.loopOnce ();
 	}
 }
 
@@ -179,7 +443,7 @@ void BotManagerImpl::enqueueMessage (MessageType type_,
 	enqueueMessage (buildMessage (type_, std::move (builder_)));
 }
 
-void rlbot::detail::BotManagerImpl::spawnBots () noexcept
+void BotManagerImpl::spawnBots () noexcept
 {
 	if (!m_controllableTeamInfo || !m_fieldInfo || !m_matchSettings)
 		return;
@@ -222,15 +486,18 @@ void rlbot::detail::BotManagerImpl::spawnBots () noexcept
 		}
 
 		auto const index = controllableInfo->index ();
+		if (std::ranges::find (m_bots, index, [] (auto const &bot_) { return bot_.index; }) !=
+		    std::end (m_bots))
+		{
+			warning ("ControllableInfo duplicate bot index %u\n", index);
+			continue;
+		}
 
 		auto bot = m_spawn (index, team, player->name ()->str ());
 
 		auto loadout = bot->getLoadout ();
 
-		assert (!m_bots.contains (index));
-		m_bots.emplace (std::piecewise_construct,
-		    std::forward_as_tuple (index),
-		    std::forward_as_tuple (index, std::move (bot), m_fieldInfo, m_matchSettings, *this));
+		m_bots.emplace_back (index, std::move (bot), m_fieldInfo, m_matchSettings, *this);
 
 		if (!loadout.has_value ())
 			continue;
@@ -243,13 +510,17 @@ void rlbot::detail::BotManagerImpl::spawnBots () noexcept
 		enqueueMessage (loadoutMessage);
 	}
 
+	// handle the first bot on the reader thread
+	for (auto &bot : m_bots | std::views::drop (1))
+		bot.startService ();
+
 	enqueueMessage (MessageType::InitComplete, {});
 }
 
 void BotManagerImpl::clearBots () noexcept
 {
-	for (auto &[_, context] : m_bots)
-		context.terminate ();
+	for (auto &bot : m_bots | std::views::drop (1))
+		bot.terminate ();
 
 	m_bots.clear ();
 }
@@ -258,43 +529,9 @@ void BotManagerImpl::handleMessage (Message message_) noexcept
 {
 	assert (message_);
 
-	if (message_.type () == MessageType::BallPrediction) [[likely]]
+	if (message_.type () == MessageType::None) [[unlikely]]
 	{
-		ZoneScopedNS ("handle BallPrediction", 16);
-
-		auto const payload = message_.flatbuffer<rlbot::flat::BallPrediction> (true);
-		if (!payload) [[unlikely]]
-			return;
-
-		for (auto &[_, context] : m_bots)
-			context.setBallPrediction (message_);
-		return;
-	}
-
-	if (message_.type () == MessageType::GamePacket) [[likely]]
-	{
-		FrameMark;
-		ZoneScopedNS ("handle GamePacket", 16);
-
-		auto const payload = message_.flatbuffer<rlbot::flat::GamePacket> (true);
-		if (!payload) [[unlikely]]
-			return;
-
-		for (auto &[_, context] : m_bots)
-			context.setGamePacket (message_);
-		return;
-	}
-
-	if (message_.type () == MessageType::MatchComm) [[unlikely]]
-	{
-		ZoneScopedNS ("handle MatchComm", 16);
-
-		auto const payload = message_.flatbuffer<rlbot::flat::MatchComm> (true);
-		if (!payload) [[unlikely]]
-			return;
-
-		for (auto &[_, context] : m_bots)
-			context.addMatchComm (message_);
+		terminate ();
 		return;
 	}
 
@@ -340,11 +577,469 @@ void BotManagerImpl::handleMessage (Message message_) noexcept
 		return;
 	}
 
-	if (message_.type () == MessageType::None) [[unlikely]]
+	if (m_bots.empty ()) [[unlikely]]
+		return;
+
+	if (message_.type () == MessageType::BallPrediction) [[likely]]
 	{
+		ZoneScopedNS ("handle BallPrediction", 16);
+
+		auto const payload = message_.flatbuffer<rlbot::flat::BallPrediction> (true);
+		if (!payload) [[unlikely]]
+			return;
+
+		for (auto &bot : m_bots)
+			bot.setBallPrediction (message_);
+		return;
+	}
+
+	if (message_.type () == MessageType::GamePacket) [[likely]]
+	{
+		FrameMark;
+		ZoneScopedNS ("handle GamePacket", 16);
+
+		auto const payload = message_.flatbuffer<rlbot::flat::GamePacket> (true);
+		if (!payload) [[unlikely]]
+			return;
+
+		for (auto &bot : m_bots | std::views::drop (1))
+			bot.setGamePacket (message_, true);
+
+		// handle the first bot on the reader thread
+		auto &bot = m_bots.front ();
+		bot.setGamePacket (message_, false);
+		bot.loopOnce ();
+
+		return;
+	}
+
+	if (message_.type () == MessageType::MatchComm) [[unlikely]]
+	{
+		ZoneScopedNS ("handle MatchComm", 16);
+
+		auto const payload = message_.flatbuffer<rlbot::flat::MatchComm> (true);
+		if (!payload) [[unlikely]]
+			return;
+
+		for (auto &bot : m_bots | std::views::drop (1))
+			bot.addMatchComm (message_, true);
+
+		// handle the first bot on the reader thread
+		auto &bot = m_bots.front ();
+		bot.setGamePacket (message_, false);
+		bot.loopOnce ();
+
+		return;
+	}
+}
+
+void BotManagerImpl::requestRead () noexcept
+{
+#ifdef _WIN32
+	ZoneScopedNS ("requestRead", 16);
+
+	WSABUF buffer;
+	buffer.buf = reinterpret_cast<CHAR *> (m_inBuffer->data () + m_inEndOffset);
+	buffer.len = m_inBuffer->size () - m_inEndOffset;
+
+	DWORD flags = MSG_PUSH_IMMEDIATE;
+
+	{
+		ZoneScopedNS ("WSARecv", 16);
+		auto const rc = WSARecv (m_sock, &buffer, 1, nullptr, &flags, &m_inOverlapped, nullptr);
+		if (rc != 0 && WSAGetLastError () != WSA_IO_PENDING)
+		{
+			error ("WSARecv: %s\n", errorMessage (true));
+			terminate ();
+		}
+	}
+#else
+	ZoneScopedNS ("io_uring_prep_readv", 16);
+
+	auto lock = std::unique_lock (m_ringSQMutex);
+
+	auto const sqe = io_uring_get_sqe (m_ring.get ());
+	assert (sqe);
+	if (!sqe)
+	{
+		lock.unlock ();
+		error ("io_uring_get_sqe: Queue is full\n");
 		terminate ();
 		return;
 	}
+
+	auto const buffer = m_inBuffer->data () + m_inEndOffset;
+	auto const size   = m_inBuffer->size () - m_inEndOffset;
+
+	if (m_inBuffer.preferred ()) [[likely]]
+	{
+		// use registered buffer
+		io_uring_prep_read_fixed (sqe, m_ringSocketFd, buffer, size, 0, m_inBuffer.tag ());
+	}
+	else
+	{
+		// fallback to unregistered buffer
+		if (m_ringRead) [[likely]]
+			io_uring_prep_read (sqe, m_ringSocketFd, buffer, size, 0);
+		else
+		{
+			m_readIov.iov_base = buffer;
+			m_readIov.iov_len  = size;
+			io_uring_prep_readv (sqe, m_ringSocketFd, &m_readIov, 1, 0);
+		}
+	}
+
+	sqe->flags |= m_ringSocketFlag;
+	io_uring_sqe_set_data (sqe, &m_inOverlapped);
+
+	auto const rc = io_uring_submit (m_ring.get ());
+	lock.unlock ();
+	if (rc <= 0)
+	{
+		if (rc < 0)
+			error ("io_uring_submit: %s\n", std::strerror (-rc));
+		else
+			error ("io_uring_submit: not submitted\n");
+		terminate ();
+	}
+#endif
+}
+
+void BotManagerImpl::handleRead (std::size_t const count_) noexcept
+{
+	ZoneScopedNS ("handleRead", 16);
+
+	if (static_cast<unsigned> (count_) == m_inBuffer->size () - m_inEndOffset) [[unlikely]]
+	{
+		// we read all the way to the end of the buffer; there's probably more to read
+		ZoneScopedNS ("partial read", 16);
+		warning ("Partial read %zd bytes\n", count_);
+	}
+
+	// move end pointer
+	m_inEndOffset += static_cast<unsigned> (count_);
+
+	assert (m_inEndOffset > m_inStartOffset);
+	while (m_inEndOffset - m_inStartOffset >= 4) [[likely]] // need to read complete header
+	{
+		auto const available = m_inEndOffset - m_inStartOffset;
+
+		auto message    = Message (m_inBuffer, m_inStartOffset);
+		auto const size = message.sizeWithHeader ();
+		if (size > available) [[unlikely]]
+		{
+			// need to read more data for complete message
+			if (m_inEndOffset == m_inBuffer->size ()) [[unlikely]]
+			{
+				// our buffer is supposed to be large enough to fit any message
+				assert (m_inStartOffset != 0);
+
+				// total message exceeds buffer boundary; move to new buffer
+				ZoneScopedNS ("move message", 16);
+				auto buffer = getBuffer ();
+				std::memcpy (buffer->data (), &m_inBuffer->operator[] (m_inStartOffset), available);
+				m_inBuffer = std::move (buffer);
+
+				m_inEndOffset -= m_inStartOffset;
+				m_inStartOffset = 0;
+			}
+
+			// partial message
+			break;
+		}
+
+		handleMessage (std::move (message));
+
+		m_inStartOffset += size;
+	}
+
+	if (m_inStartOffset == m_inEndOffset) [[likely]]
+	{
+		// complete packet read so start next read on a new buffer to avoid partial reads
+		m_inBuffer      = getBuffer ();
+		m_inStartOffset = 0;
+		m_inEndOffset   = 0;
+	}
+
+	requestRead ();
+}
+
+void BotManagerImpl::requestWrite () noexcept
+{
+	ZoneScopedNS ("requestWrite", 16);
+
+	auto lock = std::unique_lock (m_writerMutex);
+	if (m_outputQueue.empty ())
+		return;
+
+	requestWriteLocked (lock);
+}
+
+void BotManagerImpl::requestWriteLocked (std::unique_lock<std::mutex> &lock_) noexcept
+{
+	ZoneScopedNS ("requestWriteLocked", 16);
+
+	if (!m_iov.empty ())
+	{
+		lock_.unlock ();
+		return;
+	}
+
+	assert (!m_outputQueue.empty ());
+
+	std::array<Pool<Buffer>::Ref, PREALLOCATED_BUFFERS> buffers;
+
+	if (m_iov.capacity () < m_outputQueue.size ()) [[unlikely]]
+		m_iov.reserve (m_outputQueue.size ());
+
+	unsigned startOffset = m_outStartOffset;
+	for (unsigned i = 0; auto const &message : m_outputQueue)
+	{
+		auto const span = message.span ();
+		assert (span.size () > startOffset);
+
+		m_iov.emplace_back (&span[startOffset], span.size () - startOffset);
+		startOffset = 0;
+
+		buffers[i++] = message.buffer ();
+
+		if (i >= buffers.size ())
+			break;
+	}
+
+	lock_.unlock ();
+
+	if (!m_iov.empty ()) [[likely]]
+	{
+#ifdef _WIN32
+		ZoneScopedNS ("WSASend", 16);
+		auto const rc =
+		    WSASend (m_sock, m_iov.data (), m_iov.size (), nullptr, 0, &m_outOverlapped, nullptr);
+		if (rc != 0 && WSAGetLastError () != WSA_IO_PENDING)
+		{
+			error ("WSASend: %s\n", errorMessage (true));
+			terminate ();
+			return;
+		}
+#else
+		ZoneScopedNS ("io_uring_prep_writev", 16);
+
+		auto lock = std::unique_lock (m_ringSQMutex);
+
+		io_uring_sqe *sqe = nullptr;
+		for (unsigned i = 0; auto const &iov : m_iov)
+		{
+			if (sqe)
+				sqe->flags |= IOSQE_IO_LINK;
+
+			sqe = io_uring_get_sqe (m_ring.get ());
+			assert (sqe);
+			if (!sqe)
+			{
+				lock.unlock ();
+				error ("io_uring_get_sqe: Queue is full\n");
+				terminate ();
+				return;
+			}
+
+			sqe->flags |= m_ringSocketFlag;
+			io_uring_sqe_set_data (sqe, &m_outOverlapped);
+
+			assert (i < buffers.size ());
+			auto const &buffer = buffers[i++];
+			if (buffer.preferred ()) [[likely]]
+			{
+				// use registered buffer
+				io_uring_prep_write_fixed (
+				    sqe, m_ringSocketFd, iov.iov_base, iov.iov_len, 0, buffer.tag ());
+			}
+			else
+			{
+				// fallback to unregistered buffers
+				if (m_ringWrite) [[likely]]
+				{
+					io_uring_prep_write (sqe, m_ringSocketFd, iov.iov_base, iov.iov_len, 0);
+				}
+				else
+				{
+					io_uring_prep_writev (sqe, m_ringSocketFd, &iov, 1, 0);
+				}
+			}
+		}
+
+		auto const rc = io_uring_submit (m_ring.get ());
+		lock.unlock ();
+		if (rc <= 0)
+		{
+			if (rc < 0)
+				error ("io_uring_submit: %s\n", std::strerror (-rc));
+			else
+				error ("io_uring_submit: not submitted\n");
+			terminate ();
+			return;
+		}
+#endif
+	}
+}
+
+void BotManagerImpl::handleWrite (std::size_t count_) noexcept
+{
+	ZoneScopedNS ("handleWrite", 16);
+
+	auto lock = std::unique_lock (m_writerMutex);
+
+	assert (m_iov.size () <= m_outputQueue.size ());
+	assert (!m_outputQueue.empty ());
+
+	auto it  = std::begin (m_outputQueue);
+	auto it2 = std::begin (m_iov);
+	while (count_ > 0)
+	{
+		assert (it != std::end (m_outputQueue));
+		auto const size = it->sizeWithHeader ();
+		auto const rem  = size - m_outStartOffset;
+
+		if (count_ < rem) [[unlikely]]
+		{
+			// partial write
+			ZoneScopedNS ("partial write", 16);
+			m_outStartOffset += static_cast<unsigned> (count_);
+			warning ("Partial write\n");
+			break;
+		}
+
+		count_ -= rem;
+		m_outStartOffset = 0;
+
+		++it;
+		++it2;
+	}
+
+	if (it != std::begin (m_outputQueue)) [[likely]]
+	{
+		m_outputQueue.erase (std::begin (m_outputQueue), it);
+		m_iov.erase (std::begin (m_iov), it2);
+	}
+
+	assert (m_iov.size () <= m_outputQueue.size ());
+	if (m_outputQueue.empty ())
+	{
+		m_writerIdle = true;
+		lock.unlock ();
+		m_writerIdleCv.notify_all ();
+		return;
+	}
+
+	requestWriteLocked (lock);
+}
+
+void BotManagerImpl::serviceThread () noexcept
+{
+#ifdef TRACY_ENABLE
+	tracy::SetThreadName ("serviceThread");
+#endif
+
+	while (!m_quit.load (std::memory_order_relaxed)) [[likely]]
+	{
+#if _WIN32
+		OVERLAPPED *overlapped = nullptr;
+		ULONG_PTR key;
+		DWORD count;
+
+		{
+			ZoneScopedNS ("GetQueuedCompletionStatus", 16);
+			auto const rc =
+			    GetQueuedCompletionStatus (m_iocpHandle, &count, &key, &overlapped, INFINITE);
+			if (!rc)
+			{
+				error ("GetQueuedCompletionStatus: %s\n", errorMessage ());
+				break;
+			}
+		}
+#else
+		{
+			auto lock = std::unique_lock (m_ringCQMutex);
+			while (m_ringCQBusy.load ())
+				m_ringCQCv.wait (lock);
+
+			m_ringCQBusy = true;
+		}
+
+		io_uring_cqe *cqe;
+		auto const rc = io_uring_wait_cqe (m_ring.get (), &cqe);
+		if (rc == -EINTR)
+		{
+			m_ringCQBusy.store (false);
+			continue;
+		}
+		else if (rc < 0)
+		{
+			error ("io_uring_wait_cqe: %s\n", std::strerror (-rc));
+			m_ringCQBusy.store (false);
+			m_ringCQCv.notify_one ();
+			break;
+		}
+
+		if (cqe->res == -ECANCELED)
+		{
+			io_uring_cqe_seen (m_ring.get (), cqe);
+			m_ringCQBusy.store (false);
+			continue;
+		}
+
+		auto const overlapped = static_cast<int const *> (io_uring_cqe_get_data (cqe));
+		assert (overlapped);
+		if (!overlapped)
+		{
+			error ("Internal error\n");
+			io_uring_cqe_seen (m_ring.get (), cqe);
+			m_ringCQBusy.store (false);
+			m_ringCQCv.notify_one ();
+			break;
+		}
+
+		auto const key   = *overlapped;
+		auto const count = cqe->res;
+
+		io_uring_cqe_seen (m_ring.get (), cqe);
+		m_ringCQBusy.store (false);
+		m_ringCQCv.notify_one ();
+
+		if (count < 0)
+		{
+			error ("io_uring_wait_cqe: %s\n", std::strerror (-count));
+			break;
+		}
+#endif
+
+		switch (key)
+		{
+		case COMPLETION_KEY_SOCKET:
+			if (overlapped == &m_inOverlapped)
+				handleRead (count);
+			else if (overlapped == &m_outOverlapped)
+				handleWrite (count);
+			break;
+
+		case COMPLETION_KEY_WRITE_QUEUE:
+			requestWrite ();
+			break;
+
+		case COMPLETION_KEY_QUIT:
+			// chain to next thread
+			terminate ();
+			return;
+		}
+	}
+
+	terminate ();
+}
+
+Pool<Buffer>::Ref BotManagerImpl::getBuffer () noexcept
+{
+	// reduce lock contention by spreading requests across multiple pools
+	auto const index = m_bufferPoolIndex.fetch_add (1, std::memory_order_relaxed);
+	return m_bufferPools[index % m_bufferPools.size ()]->getObject ();
 }
 
 #define DEFINE_ENQUEUE(x)                                                                          \
@@ -370,199 +1065,3 @@ DEFINE_ENQUEUE (ConnectionSettings)
 DEFINE_ENQUEUE (StopCommand)
 DEFINE_ENQUEUE (SetLoadout)
 DEFINE_ENQUEUE (ControllableTeamInfo)
-
-void BotManagerImpl::readerService () noexcept
-{
-#ifdef TRACY_ENABLE
-	tracy::SetThreadName ("Reader");
-#endif
-
-	// may contain multiple messages per buffer
-	Pool<Buffer>::Ref inBuffer = m_bufferPool->getObject ();
-	unsigned startOffset       = 0; // begin pointer
-	unsigned endOffset         = 0; // end pointer
-
-	EventWaiter waiter;
-	if (!waiter.add (m_readerEvent) || !waiter.add (m_sockEvent))
-	{
-		terminate ();
-		return;
-	}
-
-	while (!m_quit.load (std::memory_order_relaxed)) [[likely]]
-	{
-		auto const event = waiter.wait ();
-		if (!event) [[unlikely]]
-			break;
-
-		event->clear ();
-
-		if (event == &m_readerEvent) [[unlikely]]
-		{
-			// only signaled to quit
-			break;
-		}
-
-		assert (inBuffer);
-		assert (endOffset < inBuffer->size ());
-		auto const rc = m_sock.read (inBuffer->data () + endOffset, inBuffer->size () - endOffset);
-		if (rc <= 0) [[unlikely]]
-		{
-			if (rc < 0 && Socket::lastError () == EWOULDBLOCK) [[likely]]
-				continue;
-
-			break;
-		}
-
-		if (static_cast<unsigned> (rc) == inBuffer->size () - endOffset) [[unlikely]]
-		{
-			// we read all the way to the end of the buffer; there's probably more to read
-			ZoneScopedNS ("partial read", 16);
-			warning ("Partial read %zd bytes\n", rc);
-		}
-
-		// move end pointer
-		endOffset += static_cast<unsigned> (rc);
-
-		assert (endOffset > startOffset);
-		while (endOffset - startOffset >= 4) [[likely]] // need to read complete header
-		{
-			auto const available = endOffset - startOffset;
-
-			auto message    = Message (inBuffer, startOffset);
-			auto const size = message.sizeWithHeader ();
-			if (size > available) [[unlikely]]
-			{
-				// need to read more data for complete message
-				if (endOffset == inBuffer->size ()) [[unlikely]]
-				{
-					// our buffer is supposed to be large enough to fit any message
-					assert (startOffset != 0);
-
-					// total message exceeds buffer boundary; move to new buffer
-					ZoneScopedNS ("move message", 16);
-					auto buffer = m_bufferPool->getObject ();
-					std::memcpy (buffer->data (), &inBuffer->operator[] (startOffset), available);
-					inBuffer = std::move (buffer);
-
-					endOffset -= startOffset;
-					startOffset = 0;
-				}
-
-				// partial message
-				break;
-			}
-
-			handleMessage (std::move (message));
-
-			startOffset += size;
-		}
-
-		if (startOffset == endOffset) [[likely]]
-		{
-			// complete packet read so start next read on a new buffer to avoid partial reads
-			inBuffer    = m_bufferPool->getObject ();
-			startOffset = 0;
-			endOffset   = 0;
-		}
-	}
-
-	terminate ();
-}
-
-void BotManagerImpl::writerService () noexcept
-{
-#ifdef TRACY_ENABLE
-	tracy::SetThreadName ("Writer");
-#endif
-
-	std::vector<Message> outMessages;
-	std::vector<Socket::IOVector> iov;
-	unsigned offset = 0;
-
-	// preallocate outMessages
-	outMessages.reserve (128);
-
-	// preallocate iov
-	iov.reserve (128);
-
-	EventWaiter waiter;
-	if (!waiter.add (m_writerEvent))
-	{
-		terminate ();
-		return;
-	}
-
-	while (!m_quit.load (std::memory_order_relaxed)) [[likely]]
-	{
-		{
-			auto const lock = std::scoped_lock (m_outputQueueMutex);
-			for (auto &item : m_outputQueue)
-				outMessages.emplace_back (std::move (item));
-
-			m_outputQueue.clear ();
-		}
-
-		iov.clear ();
-		if (iov.capacity () < outMessages.size ()) [[unlikely]]
-			iov.reserve (outMessages.size ());
-
-		unsigned startOffset = offset;
-		for (auto const &message : outMessages)
-		{
-			auto const span = message.span ();
-			assert (span.size () > startOffset);
-
-			iov.emplace_back (&span[startOffset], span.size () - startOffset);
-			startOffset = 0;
-		}
-
-		if (!iov.empty ()) [[likely]]
-		{
-			auto rc = m_sock.writev (iov);
-			if (rc < 0) [[unlikely]]
-				break;
-
-			unsigned startOffset = offset;
-
-			auto it = std::begin (outMessages);
-			while (rc > 0)
-			{
-				assert (it != std::end (outMessages));
-				auto const size = it->sizeWithHeader ();
-				auto const rem  = size - startOffset;
-
-				if (rc < rem) [[unlikely]]
-				{
-					// partial write
-					ZoneScopedNS ("partial write", 16);
-					offset += static_cast<unsigned> (rc);
-					warning ("Partial write\n");
-					continue;
-				}
-
-				rc -= rem;
-				startOffset = 0;
-
-				++it;
-			}
-
-			if (it != std::begin (outMessages)) [[likely]]
-				outMessages.erase (std::begin (outMessages), it);
-
-			continue;
-		}
-
-		m_writerIdle.store (true, std::memory_order_relaxed);
-		m_writerIdleCv.notify_all ();
-
-		// no data to write; so wait for signal
-		auto const event = waiter.wait ();
-		if (!event) [[unlikely]]
-			break;
-
-		event->clear ();
-	}
-
-	terminate ();
-}

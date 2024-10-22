@@ -2,13 +2,13 @@
 
 #include <rlbot/Bot.h>
 
-#include "Event.h"
 #include "Message.h"
 #include "Pool.h"
 
 #include <tracy/Tracy.hpp>
 
 #include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -36,16 +36,20 @@ public:
 	    Message matchSettings_,
 	    BotManagerImpl &manager_) noexcept;
 
-	/// @brief Bot service thread
-	void service () noexcept;
+	/// @brief Start bot service thread
+	void startService () noexcept;
+
+	/// @brief Run service loop once
+	void loopOnce () noexcept;
 
 	/// @brief Terminate bot service thread
 	void terminate () noexcept;
 
 	/// @brief Set game packet
 	/// @param gamePacket_ Game packet
+	/// @param notify_ Whether to notify thread wakeup
 	/// @note This triggers the bot's getOutput()
-	void setGamePacket (Message gamePacket_) noexcept;
+	void setGamePacket (Message gamePacket_, bool notify_) noexcept;
 
 	/// @brief Set ball prediction
 	/// @param ballPrediction_ Ball prediction
@@ -53,34 +57,51 @@ public:
 
 	/// @brief Add match comm
 	/// @param matchComm_ Match comm
+	/// @param notify_ Whether to notify thread wakeup
 	/// @note This triggers the bot's matchComm()
-	void addMatchComm (Message matchComm_) noexcept;
+	void addMatchComm (Message matchComm_, bool notify_) noexcept;
+
+	/// @brief index_ Index into gamePacket->players ()
+	unsigned const index;
 
 private:
+	/// @brief Bot service loop
+	bool serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept;
+
+	/// @brief Bot service thread
+	void service () noexcept;
+
 	/// @brief Bot manager
 	BotManagerImpl &m_manager;
 	/// @brief Bot thread
 	std::thread m_thread;
-	/// @brief Event to wake up bot thread
-	Event m_event = Event::create ();
 	/// @brief Mutex
-	TracyLockableN (std::mutex, m_mutex, "bot");
+	std::mutex m_mutex;
+	/// @brief Condition variable
+	std::condition_variable m_cv;
 	/// @brief Bot instance
 	std::unique_ptr<Bot> m_bot;
 
-	/// @brief Pending match comms
-	std::vector<Message> m_matchComms;
-	/// @brief Game packet
-	Message m_gamePacket;
-	/// @brief Ball prediction
-	Message m_ballPrediction;
-	/// @brief Field info
-	Message m_fieldInfo;
-	/// @brief Match settings
-	Message m_matchSettings;
+	/// @brief Player input
+	rlbot::flat::PlayerInputT m_input{};
 
-	/// @brief index_ Index into gamePacket->players ()
-	unsigned const m_index;
+	/// @brief Pending match comms
+	std::vector<Message> m_matchCommsIn;
+	/// @brief Working match comms
+	std::vector<Message> m_matchCommsWork;
+	/// @brief Game packet message
+	Message m_gamePacketMessage;
+	/// @brief Ball prediction message
+	Message m_ballPredictionMessage;
+	/// @brief Field info message
+	Message m_fieldInfoMessage;
+	/// @brief Match settings message
+	Message m_matchSettingsMessage;
+
+	/// @brief Field info
+	rlbot::flat::FieldInfo const *m_fieldInfo = nullptr;
+	/// @brief Match settings
+	rlbot::flat::MatchSettings const *m_matchSettings = nullptr;
 
 	/// @brief Signal to quit
 	std::atomic_bool m_quit = false;

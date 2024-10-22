@@ -36,9 +36,11 @@ MessageType Message::type () const noexcept
 {
 	assert (m_buffer);
 	assert (m_offset <= m_buffer->size () - 2);
-	return static_cast<MessageType> (
+	auto const type = static_cast<MessageType> (
 	    static_cast<unsigned> (m_buffer->operator[] (m_offset) << CHAR_BIT) |
 	    m_buffer->operator[] (m_offset + 1));
+
+	return type;
 }
 
 unsigned Message::size () const noexcept
@@ -86,6 +88,11 @@ T const *Message::flatbuffer (bool const verify_) const noexcept
 	}
 
 	return root;
+}
+
+Pool<Buffer>::Ref Message::buffer () const noexcept
+{
+	return m_buffer;
 }
 
 void Message::reset () noexcept

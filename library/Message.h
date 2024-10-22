@@ -4,9 +4,9 @@
 
 #include <rlbot_generated.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace rlbot::detail
 {
@@ -74,6 +74,9 @@ public:
 	/// @note Returns nullptr for invalid message
 	template <typename T>
 	T const *flatbuffer (bool verify_ = false) const noexcept;
+
+	/// @brief Get buffer reference
+	Pool<Buffer>::Ref buffer () const noexcept;
 
 	/// @brief Reset message
 	/// This makes the message invalid and releases the underlying buffer

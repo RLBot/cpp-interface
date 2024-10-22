@@ -31,7 +31,21 @@ public:
 	{
 	public:
 		/// @brief Counted object reference
-		using CountedRef = std::shared_ptr<std::pair<std::atomic_uint, T>>;
+		struct Counted
+		{
+			/// @brief Reference
+			T ref{};
+			/// @brief Reference count
+			std::atomic_uint count = 0;
+#ifndef _WIN32
+			/// @brief User-defined tag
+			std::uintptr_t tag = 0;
+			/// @brief Whether preferred
+			bool preferred = false;
+#endif
+		};
+
+		using CountedRef = std::shared_ptr<Counted>;
 
 		~Ref () noexcept;
 
@@ -70,6 +84,22 @@ public:
 		/// This makes the reference invalid and releases the object into a pool
 		void reset () noexcept;
 
+#ifndef _WIN32
+		/// @brief Get user-defined tag
+		std::uintptr_t tag () const noexcept;
+
+		/// @brief Set user-defined tag
+		/// @param tag_ Tag to set
+		void setTag (std::uintptr_t tag_) noexcept;
+
+		/// @brief Whether this is a preferred object
+		bool preferred () const noexcept;
+
+		/// @brief Set whether this is a preferred object
+		/// @param preferred_ Whether preferred
+		void setPreferred (bool preferred_ = true) noexcept;
+#endif
+
 	private:
 		/// @brief Object pool
 		std::shared_ptr<Pool> m_pool;
@@ -96,13 +126,18 @@ public:
 	Ref getObject () noexcept;
 
 	/// @brief Release object into pool
+	/// @param object_ Object to put
 	/// @note If this is the last reference, the object is recycled
 	void putObject (Ref::CountedRef object_) noexcept;
 
 private:
 	/// @brief Mutex
 	std::mutex m_mutex;
-	/// @brief Pool of unreferenced objects
+#ifndef _WIN32
+	/// @brief Pool of unreferenced preferred objects
+	std::vector<typename Ref::CountedRef> m_preferredPool;
+#endif
+	/// @brief Pool of unreferenced unpreferred objects
 	std::vector<typename Ref::CountedRef> m_pool;
 	/// @brief Pool name
 	std::string const m_name;
@@ -112,7 +147,7 @@ private:
 
 /// @brief Buffer size for buffer pool
 /// @note Large enough to hold GamePacket+BallPrediction
-constexpr auto BUFFER_SIZE = 2 * std::numeric_limits<std::uint16_t>::max ();
+constexpr auto BUFFER_SIZE = 2 * (std::numeric_limits<std::uint16_t>::max () + 1u);
 
 using Buffer = std::array<std::uint8_t, BUFFER_SIZE>;
 

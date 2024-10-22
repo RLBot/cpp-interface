@@ -3,25 +3,20 @@
 #include "Log.h"
 #include "Socket.h"
 
-#include <cstdio>
-
 using namespace rlbot::detail;
 
 ///////////////////////////////////////////////////////////////////////////
 WsaData::~WsaData () noexcept
 {
-#ifdef _WIN32
 	if (m_wsaData.has_value ())
 	{
 		if (WSACleanup () != 0)
-			error ("WSACleanup: %s\n", Socket::errorMessage ());
+			error ("WSACleanup: %s\n", errorMessage (true));
 	}
-#endif
 }
 
 bool WsaData::init () noexcept
 {
-#ifdef _WIN32
 	if (m_wsaData.has_value ())
 		return true;
 
@@ -32,7 +27,6 @@ bool WsaData::init () noexcept
 		m_wsaData.reset ();
 		return false;
 	}
-#endif
 
 	return true;
 }

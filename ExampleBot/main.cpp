@@ -42,7 +42,7 @@ int main (int argc_, char *argv_[])
 	auto const port = argv_[2];
 
 	rlbot::BotManager<ExampleBot> manager;
-	if (!manager.run (host, port, agentId))
+	if (!manager.run (host, port, agentId, true))
 		return EXIT_FAILURE;
 }
 

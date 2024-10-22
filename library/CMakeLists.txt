@@ -28,6 +28,27 @@ FetchContent_Declare(tracy
 )
 FetchContent_Populate(tracy)
 
+if(LINUX)
+	include(ProcessorCount)
+	ProcessorCount(NPROC)
+
+	FetchContent_Declare(liburing
+		GIT_REPOSITORY https://github.com/axboe/liburing.git
+		GIT_TAG liburing-2.7
+	)
+	FetchContent_Populate(liburing)
+
+	execute_process(
+		COMMAND ./configure
+		WORKING_DIRECTORY ${liburing_SOURCE_DIR}
+	)
+
+	execute_process(
+		COMMAND make -j ${NPROC} library
+		WORKING_DIRECTORY ${liburing_SOURCE_DIR}
+	)
+endif()
+
 find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH PATHS ${flatbuffers_schema_SOURCE_DIR})
 
 add_custom_command(
@@ -48,7 +69,6 @@ add_custom_target(rlbot-generated DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/rlbot_gene
 add_library(${PROJECT_NAME} SHARED)
 add_library(${PROJECT_NAME}-static STATIC)
 
-
 foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 	target_sources(${TARGET} PRIVATE
 		include/rlbot/Bot.h
@@ -62,20 +82,17 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 		BotManager.cpp
 		BotManagerImpl.cpp
 		BotManagerImpl.h
-		Event.cpp
-		Event.h
 		Log.cpp
 		Log.h
 		Message.cpp
 		Message.h
 		Pool.cpp
 		Pool.h
-		SockAddr.cpp
-		SockAddr.h
 		Socket.cpp
 		Socket.h
-		WsaData.cpp
-		WsaData.h
+
+		$<$<BOOL:${WIN32}>:WsaData.cpp>
+		$<$<BOOL:${WIN32}>:WsaData.h>
 	)
 
 	target_compile_features(${TARGET} PRIVATE cxx_std_20)
@@ -102,12 +119,18 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 		${CMAKE_CURRENT_BINARY_DIR}
 	)
 
+	if(LINUX)
+		target_include_directories(${TARGET} PRIVATE ${liburing_SOURCE_DIR}/src/include)
+		#target_link_directories(${TARGET} PRIVATE ${liburing_SOURCE_DIR}/src)
+		target_link_libraries(${TARGET} PRIVATE ${liburing_SOURCE_DIR}/src/liburing.a)
+	endif()
+
 	if(WIN32)
 		target_link_libraries(${TARGET} PRIVATE wsock32 ws2_32)
 		target_compile_definitions(${TARGET}
 			PRIVATE
 				_CRT_SECURE_NO_WARNINGS
-				_WIN32_WINNT=_WIN32_WINNT_WIN7
+				_WIN32_WINNT=_WIN32_WINNT_WINBLUE
 		)
 	endif()
 
@@ -163,9 +186,6 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 	if(RLBOT_CPP_ENABLE_TRACY)
 		target_compile_definitions(${TARGET} PUBLIC TRACY_ENABLE)
 		target_sources(${TARGET} PRIVATE ${tracy_SOURCE_DIR}/public/TracyClient.cpp)
-		set_source_files_properties(${tracy_SOURCE_DIR}/public/TracyClient.cpp PROPERTIES
-			TRACY_SOURCE 1
-		)
 	endif()
 
 	target_compile_definitions(${TARGET} PUBLIC

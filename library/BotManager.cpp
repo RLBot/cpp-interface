@@ -4,37 +4,17 @@
 
 #include "BotManagerImpl.h"
 #include "Log.h"
-#include "SockAddr.h"
-#include "Socket.h"
 
-#ifdef _WIN32
-#include <WS2tcpip.h>
-#else
-#include <poll.h>
-#endif
-
-#include <atomic>
-#include <cerrno>
-#include <chrono>
-#include <condition_variable>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <functional>
 #include <memory>
-#include <mutex>
-#include <optional>
-#include <queue>
-#include <thread>
-#include <tuple>
-#include <unordered_map>
-using namespace std::chrono_literals;
 
 using namespace rlbot;
 using namespace rlbot::detail;
 
 namespace
 {
+/// @brief Dummy spawn function
 std::unique_ptr<Bot> spawnNothing (int, int, std::string) noexcept
 {
 	return {};
@@ -55,7 +35,8 @@ BotManagerBase::BotManagerBase (
 
 bool BotManagerBase::run (char const *const host_,
     char const *const port_,
-    char const *const agentId_) noexcept
+    char const *const agentId_,
+    bool const ballPrediction_) noexcept
 {
 	auto const agentId = std::getenv ("RLBOT_AGENT_ID");
 	if (!agentId || std::strlen (agentId) == 0)
@@ -70,7 +51,7 @@ bool BotManagerBase::run (char const *const host_,
 	rlbot::flat::ConnectionSettingsT cs{
 	    //
 	    .agent_id               = agentId_,
-	    .wants_ball_predictions = true,
+	    .wants_ball_predictions = ballPrediction_,
 	    .wants_comms            = true,
 	    .close_after_match      = true,
 	    //

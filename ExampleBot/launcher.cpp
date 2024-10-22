@@ -25,7 +25,7 @@ int main (int argc_, char *argv_[])
 	ms.enable_rendering        = true;
 	ms.enable_state_setting    = true;
 
-	for (unsigned i = 0; i < 4; ++i)
+	for (unsigned i = 0; i < 1; ++i)
 	{
 		auto player = std::make_unique<rlbot::flat::PlayerConfigurationT> ();
 		player->variety.Set (rlbot::flat::RLBotT{});
@@ -45,5 +45,5 @@ int main (int argc_, char *argv_[])
 		std::printf ("Please run one ExampleBot process per bot\n");
 
 	std::printf (
-	    "Set the RLBOT_AGENT_ID=RLBotCPP/ExampleBot environment variable when launching\n");
+	    "Set the RLBOT_AGENT_ID=\"RLBotCPP/ExampleBot\" environment variable when launching\n");
 }
