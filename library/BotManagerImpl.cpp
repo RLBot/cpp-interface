@@ -45,10 +45,6 @@ BotManagerImpl::BotManagerImpl (
     std::unique_ptr<Bot> (&spawn_) (int, int, std::string) noexcept) noexcept
     : m_spawn (spawn_)
 {
-	// initialize buffer pools
-	for (unsigned i = 0; auto &pool : m_bufferPools)
-		pool = Pool<Buffer>::create ("Buffer " + std::to_string (i++));
-
 #ifdef _WIN32
 	m_inOverlapped.hEvent  = nullptr;
 	m_outOverlapped.hEvent = nullptr;
@@ -207,6 +203,10 @@ bool BotManagerImpl::run (char const *const host_, char const *const port_) noex
 	}
 
 	{
+		// reset buffer pools
+		for (unsigned i = 0; auto &pool : m_bufferPools)
+			pool = Pool<Buffer>::create ("Buffer " + std::to_string (i++));
+
 		// preallocate some buffers to register
 		std::vector<Pool<Buffer>::Ref> buffers;
 		std::vector<iovec> iovs;
