@@ -25,12 +25,6 @@ int main (int argc_, char *argv_[])
 {
 	TracyNoop;
 
-	if (argc_ <= 2)
-	{
-		std::fprintf (stderr, "Usage: %s <addr> <port>\n", argv_[0]);
-		return EXIT_FAILURE;
-	}
-
 	auto const agentId = std::getenv ("RLBOT_AGENT_ID");
 	if (!agentId || std::strlen (agentId) == 0)
 	{
@@ -38,12 +32,22 @@ int main (int argc_, char *argv_[])
 		return EXIT_FAILURE;
 	}
 
-	auto const host = argv_[1];
-	auto const port = argv_[2];
+	auto const serverPort = [] () -> char const * {
+		auto const env = std::getenv ("RLBOT_SERVER_PORT");
+		if (env)
+			return env;
+		return "23234";
+	}();
+
+	auto const host = argc_ > 1 ? argv_[1] : "127.0.0.1";
+	auto const port = argc_ > 2 ? argv_[2] : serverPort;
 
 	rlbot::BotManager<ExampleBot> manager;
 	if (!manager.run (host, port, agentId, true))
+	{
+		std::fprintf (stderr, "Usage: %s [addr] [port]\n", argv_[0]);
 		return EXIT_FAILURE;
+	}
 }
 
 #ifdef TRACY_ENABLE

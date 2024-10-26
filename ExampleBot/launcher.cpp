@@ -1,11 +1,27 @@
 #include <rlbot/BotManager.h>
 
 #include <cstdio>
+#include <cstdlib>
+
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <unistd.h>
+#endif
 
 #define USE_HIVEMIND true
 
 int main (int argc_, char *argv_[])
 {
+	// MSVC and glibc support dynamically allocated cwd
+	// If you use a different libc this won't work!
+	auto const cwd = ::getcwd (nullptr, 0);
+	if (!cwd)
+	{
+		std::fprintf (stderr, "Failed to get current directory\n");
+		return EXIT_FAILURE;
+	}
+
 	if (argc_ <= 2)
 	{
 		std::fprintf (stderr, "Usage: %s <addr> <port>\n", argv_[0]);
@@ -17,6 +33,7 @@ int main (int argc_, char *argv_[])
 
 	/// map names at https://github.com/VirxEC/python-interface/blob/master/rlbot/utils/maps.py
 	rlbot::flat::MatchSettingsT ms{};
+	ms.auto_start_bots         = true;
 	ms.game_map_upk            = "Stadium_P";
 	ms.game_mode               = rlbot::flat::GameMode::Soccer;
 	ms.skip_replays            = true;
@@ -25,16 +42,24 @@ int main (int argc_, char *argv_[])
 	ms.enable_rendering        = true;
 	ms.enable_state_setting    = true;
 
-	for (unsigned i = 0; i < 1; ++i)
+	for (unsigned i = 0; i < 4; ++i)
 	{
 		auto player = std::make_unique<rlbot::flat::PlayerConfigurationT> ();
 		player->variety.Set (rlbot::flat::RLBotT{});
 		player->team     = i % 2;
+		player->root_dir = cwd;
+#ifdef _WIN32
+		player->run_command = "ExampleBot.exe";
+#else
+		player->run_command = "./ExampleBot";
+#endif
 		player->name     = "ExampleBot";
 		player->agent_id = "RLBotCPP/ExampleBot";
 		player->hivemind = USE_HIVEMIND;
 		ms.player_configurations.emplace_back (std::move (player));
 	}
+
+	std::free (cwd);
 
 	if (!rlbot::BotManagerBase::startMatch (host, port, ms))
 		return EXIT_FAILURE;

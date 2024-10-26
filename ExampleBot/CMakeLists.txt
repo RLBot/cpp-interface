@@ -2,9 +2,6 @@ cmake_minimum_required(VERSION 3.22)
 
 project(ExampleBot VERSION 1.0.0)
 
-include(CheckIPOSupported)
-check_ipo_supported(RESULT ENABLE_LTO)
-
 ###########################################################################
 add_executable(${PROJECT_NAME})
 
@@ -16,14 +13,18 @@ target_sources(${PROJECT_NAME} PRIVATE
 	main.cpp
 )
 
-if(ENABLE_LTO)
+if(LTO_SUPPORTED)
 	set_target_properties(${PROJECT_NAME} PROPERTIES
-		INTERPROCEDURAL_OPTIMIZATION TRUE
+		INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_CPP_ENABLE_LTO}>
 		INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
 	)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE RLBotCPP-static)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different  $<TARGET_FILE:${PROJECT_NAME}> ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 ###########################################################################
 add_executable(${PROJECT_NAME}-Launcher)
@@ -36,11 +37,13 @@ target_sources(${PROJECT_NAME}-Launcher PRIVATE
 
 target_link_libraries(${PROJECT_NAME}-Launcher PRIVATE RLBotCPP-static)
 
-if(ENABLE_LTO)
+if(LTO_SUPPORTED)
 	set_target_properties(${PROJECT_NAME}-Launcher PROPERTIES
-		INTERPROCEDURAL_OPTIMIZATION TRUE
+		INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_CPP_ENABLE_LTO}>
 		INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
 	)
 endif()
 
-
+add_custom_command(TARGET ${PROJECT_NAME}-Launcher POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different  $<TARGET_FILE:${PROJECT_NAME}-Launcher> ${CMAKE_CURRENT_SOURCE_DIR}
+)

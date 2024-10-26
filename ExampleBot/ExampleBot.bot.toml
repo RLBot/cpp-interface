@@ -1,0 +1,16 @@
+[settings]
+name = "ExampleBotCPP"
+loadout_file = ""
+root_dir = ""
+run_command = "ExampleBot.exe"
+run_command_linux = "./ExampleBot"
+agent_id = "RLBotCPP/ExampleBot"
+hivemind = true
+
+[details]
+description = "Made possible by RLBot"
+fun_fact = "This is a test bot"
+source_link = "https://github.com/mtheall/RLBotCPP"
+developer = "BotMaker"
+language = "C++"
+tags = []

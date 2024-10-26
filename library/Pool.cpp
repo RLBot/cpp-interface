@@ -218,7 +218,9 @@ Pool<T>::Ref Pool<T>::getObject () noexcept
 			object = std::move (m_pool.back ());
 			m_pool.pop_back ();
 			assert (object->count.load (std::memory_order_relaxed) == 0);
+#ifndef _WIN32
 			assert (!object->preferred);
+#endif
 		}
 		else
 		{

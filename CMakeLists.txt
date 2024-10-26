@@ -2,5 +2,70 @@ cmake_minimum_required(VERSION 3.22)
 
 project(RLBotCPP VERSION 2.0.0)
 
+option(RLBOT_CPP_ENABLE_LTO "Enable RLBotCPP link-time optimization" ON)
+option(RLBOT_CPP_ENABLE_TRACY "Enable tracy profiler" OFF)
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT LTO_SUPPORTED)
+
+include(FetchContent)
+
+FetchContent_Declare(flatbuffers
+	GIT_REPOSITORY https://github.com/google/flatbuffers.git
+	GIT_TAG v24.3.25
+)
+FetchContent_Populate(flatbuffers)
+
+FetchContent_Declare(flatbuffers_schema
+	GIT_REPOSITORY https://github.com/RLBot/flatbuffers-schema.git
+	GIT_TAG a01a99dedbe9f7b58e3f91191dbd20e90c476d84
+)
+FetchContent_Populate(flatbuffers_schema)
+
+FetchContent_Declare(tracy
+	GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+	GIT_TAG v0.11.1
+)
+FetchContent_Populate(tracy)
+
+if(LINUX)
+	include(ProcessorCount)
+	ProcessorCount(NPROC)
+
+	FetchContent_Declare(liburing
+		GIT_REPOSITORY https://github.com/axboe/liburing.git
+		GIT_TAG liburing-2.7
+	)
+	FetchContent_Populate(liburing)
+
+	execute_process(
+		COMMAND ./configure
+		WORKING_DIRECTORY ${liburing_SOURCE_DIR}
+	)
+
+	execute_process(
+		COMMAND make -j ${NPROC} library
+		WORKING_DIRECTORY ${liburing_SOURCE_DIR}
+	)
+endif()
+
+find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH PATHS ${flatbuffers_schema_SOURCE_DIR})
+
+add_custom_command(
+	OUTPUT
+		${CMAKE_CURRENT_BINARY_DIR}/rlbot_generated.h
+	COMMAND
+		${FLATC} --cpp --gen-object-api --gen-all --cpp-std c++17 ${flatbuffers_schema_SOURCE_DIR}/rlbot.fbs
+	DEPENDS
+		${flatbuffers_schema_SOURCE_DIR}/comms.fbs
+		${flatbuffers_schema_SOURCE_DIR}/gamestate.fbs
+		${flatbuffers_schema_SOURCE_DIR}/matchstart.fbs
+		${flatbuffers_schema_SOURCE_DIR}/rlbot.fbs
+		${flatbuffers_schema_SOURCE_DIR}/rendering.fbs
+)
+
+add_custom_target(rlbot-generated DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/rlbot_generated.h)
+
 add_subdirectory(library)
+add_subdirectory(benchmark)
 add_subdirectory(ExampleBot)

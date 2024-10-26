@@ -137,15 +137,11 @@ private:
 	/// @brief Read iov
 	iovec m_readIov;
 	/// @brief io uring
-	std::unique_ptr<io_uring, void (*) (io_uring *)> m_ring = {nullptr, nullptr};
+	io_uring m_ring;
+	/// @brief io uring destructor
+	std::unique_ptr<io_uring, void (*) (io_uring *)> m_ringDestructor = {nullptr, nullptr};
 	/// @brief io uring submission queue mutex
 	std::mutex m_ringSQMutex;
-	/// @brief io uring completion queue mutex
-	std::mutex m_ringCQMutex;
-	/// @brief io uring completion queue condition variable
-	std::condition_variable m_ringCQCv;
-	/// @brief Whether io uring completion queue is being waiting on
-	std::atomic_bool m_ringCQBusy = false;
 	/// @brief Whether io uring supports read
 	bool m_ringRead = false;
 	/// @brief Whether io uring supports write

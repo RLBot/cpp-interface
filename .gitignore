@@ -1,2 +1,7 @@
 .vscode/
 build/
+
+ExampleBot/ExampleBot
+ExampleBot/ExampleBot.exe
+ExampleBot/ExampleBot-Launcher
+ExampleBot/ExampleBot-Launcher.exe

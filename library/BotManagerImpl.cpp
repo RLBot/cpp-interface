@@ -18,6 +18,7 @@ int (&closesocket) (int) = ::close;
 #include <cassert>
 #include <chrono>
 #include <climits>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -63,6 +64,10 @@ bool BotManagerImpl::run (char const *const host_, char const *const port_) noex
 		error ("BotManager is already running\n");
 		return false;
 	}
+
+	// reset buffer pools
+	for (unsigned i = 0; auto &pool : m_bufferPools)
+		pool = Pool<Buffer>::create ("Buffer " + std::to_string (i++));
 
 #ifdef _WIN32
 	if (!m_wsaData.init ())
@@ -156,8 +161,7 @@ bool BotManagerImpl::run (char const *const host_, char const *const port_) noex
 	}
 #else
 	{
-		auto ring     = std::make_unique<io_uring> ();
-		auto const rc = io_uring_queue_init (64, ring.get (), 0);
+		auto const rc = io_uring_queue_init (64, &m_ring, 0);
 		if (rc < 0)
 		{
 			error ("io_uring_queue_init: %s\n", std::strerror (-rc));
@@ -166,12 +170,11 @@ bool BotManagerImpl::run (char const *const host_, char const *const port_) noex
 			return false;
 		}
 
-		m_ring = std::unique_ptr<io_uring, void (*) (io_uring *)> (
-		    ring.release (), &io_uring_queue_exit);
+		m_ringDestructor = {&m_ring, &io_uring_queue_exit};
 	}
 
 	{
-		auto const probe = io_uring_get_probe_ring (m_ring.get ());
+		auto const probe = io_uring_get_probe_ring (&m_ring);
 		if (!probe)
 			error ("io_uring_get_probe_ring: failed to probe\n");
 		else
@@ -187,7 +190,7 @@ bool BotManagerImpl::run (char const *const host_, char const *const port_) noex
 	}
 
 	{
-		auto const rc = io_uring_register_files (m_ring.get (), &m_sock, 1);
+		auto const rc = io_uring_register_files (&m_ring, &m_sock, 1);
 		if (rc < 0)
 		{
 			// doesn't work on WSL?
@@ -222,7 +225,7 @@ bool BotManagerImpl::run (char const *const host_, char const *const port_) noex
 			buffer.setPreferred (true);
 		}
 
-		auto const rc = io_uring_register_buffers (m_ring.get (), iovs.data (), iovs.size ());
+		auto const rc = io_uring_register_buffers (&m_ring, iovs.data (), iovs.size ());
 		if (rc < 0)
 		{
 			error ("io_uring_register_buffers: %s\n", std::strerror (-rc));
@@ -235,7 +238,9 @@ bool BotManagerImpl::run (char const *const host_, char const *const port_) noex
 
 	m_outputQueue.reserve (128);
 
+#ifdef _WIN32
 	for (unsigned i = 0; i < 2; ++i)
+#endif
 		m_serviceThreads.emplace_back (&BotManagerImpl::serviceThread, this);
 
 	m_inBuffer = getBuffer ();
@@ -272,11 +277,11 @@ void BotManagerImpl::terminate () noexcept
 			error ("PostQueuedCompletionStatus: %s\n", errorMessage ());
 	}
 #else
-	if (m_ring)
+	if (m_ringDestructor)
 	{
 		auto lock = std::unique_lock (m_ringSQMutex);
 
-		auto const sqe = io_uring_get_sqe (m_ring.get ());
+		auto const sqe = io_uring_get_sqe (&m_ring);
 		assert (sqe);
 		if (!sqe)
 		{
@@ -290,7 +295,7 @@ void BotManagerImpl::terminate () noexcept
 
 		io_uring_sqe_set_data (sqe, &m_quitOverlapped);
 
-		auto const rc = io_uring_submit (m_ring.get ());
+		auto const rc = io_uring_submit (&m_ring);
 		lock.unlock ();
 		if (rc <= 0)
 		{
@@ -330,7 +335,7 @@ void BotManagerImpl::join () noexcept
 		m_iocpHandle = nullptr;
 	}
 #else
-	m_ring.reset ();
+	m_ringDestructor.reset ();
 #endif
 
 	m_outputQueue.clear ();
@@ -398,7 +403,7 @@ void BotManagerImpl::enqueueMessage (Message message_) noexcept
 #else
 		auto lock = std::unique_lock (m_ringSQMutex);
 
-		auto const sqe = io_uring_get_sqe (m_ring.get ());
+		auto const sqe = io_uring_get_sqe (&m_ring);
 		assert (sqe);
 		if (!sqe)
 		{
@@ -412,7 +417,7 @@ void BotManagerImpl::enqueueMessage (Message message_) noexcept
 
 		io_uring_sqe_set_data (sqe, &m_writeQueueOverlapped);
 
-		auto const rc = io_uring_submit (m_ring.get ());
+		auto const rc = io_uring_submit (&m_ring);
 		lock.unlock ();
 		if (rc <= 0)
 		{
@@ -626,7 +631,6 @@ void BotManagerImpl::handleMessage (Message message_) noexcept
 
 		// handle the first bot on the reader thread
 		auto &bot = m_bots.front ();
-		bot.setGamePacket (message_, false);
 		bot.loopOnce ();
 
 		return;
@@ -658,7 +662,7 @@ void BotManagerImpl::requestRead () noexcept
 
 	auto lock = std::unique_lock (m_ringSQMutex);
 
-	auto const sqe = io_uring_get_sqe (m_ring.get ());
+	auto const sqe = io_uring_get_sqe (&m_ring);
 	assert (sqe);
 	if (!sqe)
 	{
@@ -692,7 +696,7 @@ void BotManagerImpl::requestRead () noexcept
 	sqe->flags |= m_ringSocketFlag;
 	io_uring_sqe_set_data (sqe, &m_inOverlapped);
 
-	auto const rc = io_uring_submit (m_ring.get ());
+	auto const rc = io_uring_submit (&m_ring);
 	lock.unlock ();
 	if (rc <= 0)
 	{
@@ -709,6 +713,13 @@ void BotManagerImpl::handleRead (std::size_t const count_) noexcept
 {
 	ZoneScopedNS ("handleRead", 16);
 
+	if (count_ == 0)
+	{
+		// peer disconnected
+		terminate ();
+		return;
+	}
+
 	if (static_cast<unsigned> (count_) == m_inBuffer->size () - m_inEndOffset) [[unlikely]]
 	{
 		// we read all the way to the end of the buffer; there's probably more to read
@@ -719,7 +730,7 @@ void BotManagerImpl::handleRead (std::size_t const count_) noexcept
 	// move end pointer
 	m_inEndOffset += static_cast<unsigned> (count_);
 
-	assert (m_inEndOffset > m_inStartOffset);
+	assert (m_inEndOffset >= m_inStartOffset);
 	while (m_inEndOffset - m_inStartOffset >= 4) [[likely]] // need to read complete header
 	{
 		auto const available = m_inEndOffset - m_inStartOffset;
@@ -832,7 +843,7 @@ void BotManagerImpl::requestWriteLocked (std::unique_lock<std::mutex> &lock_) no
 			if (sqe)
 				sqe->flags |= IOSQE_IO_LINK;
 
-			sqe = io_uring_get_sqe (m_ring.get ());
+			sqe = io_uring_get_sqe (&m_ring);
 			assert (sqe);
 			if (!sqe)
 			{
@@ -867,7 +878,7 @@ void BotManagerImpl::requestWriteLocked (std::unique_lock<std::mutex> &lock_) no
 			}
 		}
 
-		auto const rc = io_uring_submit (m_ring.get ());
+		auto const rc = io_uring_submit (&m_ring);
 		lock.unlock ();
 		if (rc <= 0)
 		{
@@ -957,33 +968,19 @@ void BotManagerImpl::serviceThread () noexcept
 			}
 		}
 #else
-		{
-			auto lock = std::unique_lock (m_ringCQMutex);
-			while (m_ringCQBusy.load ())
-				m_ringCQCv.wait (lock);
-
-			m_ringCQBusy = true;
-		}
-
 		io_uring_cqe *cqe;
-		auto const rc = io_uring_wait_cqe (m_ring.get (), &cqe);
+		auto const rc = io_uring_wait_cqe (&m_ring, &cqe);
 		if (rc == -EINTR)
-		{
-			m_ringCQBusy.store (false);
 			continue;
-		}
 		else if (rc < 0)
 		{
 			error ("io_uring_wait_cqe: %s\n", std::strerror (-rc));
-			m_ringCQBusy.store (false);
-			m_ringCQCv.notify_one ();
 			break;
 		}
 
 		if (cqe->res == -ECANCELED)
 		{
-			io_uring_cqe_seen (m_ring.get (), cqe);
-			m_ringCQBusy.store (false);
+			io_uring_cqe_seen (&m_ring, cqe);
 			continue;
 		}
 
@@ -992,18 +989,14 @@ void BotManagerImpl::serviceThread () noexcept
 		if (!overlapped)
 		{
 			error ("Internal error\n");
-			io_uring_cqe_seen (m_ring.get (), cqe);
-			m_ringCQBusy.store (false);
-			m_ringCQCv.notify_one ();
+			io_uring_cqe_seen (&m_ring, cqe);
 			break;
 		}
 
 		auto const key   = *overlapped;
 		auto const count = cqe->res;
 
-		io_uring_cqe_seen (m_ring.get (), cqe);
-		m_ringCQBusy.store (false);
-		m_ringCQCv.notify_one ();
+		io_uring_cqe_seen (&m_ring, cqe);
 
 		if (count < 0)
 		{

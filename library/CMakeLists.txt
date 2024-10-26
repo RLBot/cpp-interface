@@ -2,70 +2,6 @@ cmake_minimum_required(VERSION 3.22)
 
 project(RLBotCPP VERSION 1.0.0)
 
-option(RLBOT_CPP_ENABLE_TRACY "Enable tracy profiler" OFF)
-option(RLBOT_CPP_ENABLE_LTO "Enable RLBotCPP link-time optimization" ON)
-
-include(CheckIPOSupported)
-check_ipo_supported(RESULT ENABLE_LTO)
-
-include(FetchContent)
-
-FetchContent_Declare(flatbuffers
-	GIT_REPOSITORY https://github.com/google/flatbuffers.git
-	GIT_TAG v24.3.25
-)
-FetchContent_Populate(flatbuffers)
-
-FetchContent_Declare(flatbuffers_schema
-	GIT_REPOSITORY https://github.com/RLBot/flatbuffers-schema.git
-	GIT_TAG 15d09b465b0620ec3eac114d9996a673b478d258
-)
-FetchContent_Populate(flatbuffers_schema)
-
-FetchContent_Declare(tracy
-	GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-	GIT_TAG v0.11.1
-)
-FetchContent_Populate(tracy)
-
-if(LINUX)
-	include(ProcessorCount)
-	ProcessorCount(NPROC)
-
-	FetchContent_Declare(liburing
-		GIT_REPOSITORY https://github.com/axboe/liburing.git
-		GIT_TAG liburing-2.7
-	)
-	FetchContent_Populate(liburing)
-
-	execute_process(
-		COMMAND ./configure
-		WORKING_DIRECTORY ${liburing_SOURCE_DIR}
-	)
-
-	execute_process(
-		COMMAND make -j ${NPROC} library
-		WORKING_DIRECTORY ${liburing_SOURCE_DIR}
-	)
-endif()
-
-find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH PATHS ${flatbuffers_schema_SOURCE_DIR})
-
-add_custom_command(
-	OUTPUT
-		${CMAKE_CURRENT_BINARY_DIR}/rlbot_generated.h
-	COMMAND
-		${FLATC} --cpp --gen-object-api --gen-all --cpp-std c++17 ${flatbuffers_schema_SOURCE_DIR}/rlbot.fbs
-	DEPENDS
-		${flatbuffers_schema_SOURCE_DIR}/comms.fbs
-		${flatbuffers_schema_SOURCE_DIR}/gamestate.fbs
-		${flatbuffers_schema_SOURCE_DIR}/matchstart.fbs
-		${flatbuffers_schema_SOURCE_DIR}/rlbot.fbs
-		${flatbuffers_schema_SOURCE_DIR}/rendering.fbs
-)
-
-add_custom_target(rlbot-generated DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/rlbot_generated.h)
-
 add_library(${PROJECT_NAME} SHARED)
 add_library(${PROJECT_NAME}-static STATIC)
 
@@ -74,7 +10,6 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 		include/rlbot/Bot.h
 		include/rlbot/BotManager.h
 		include/rlbot/RLBotCPP.h
-		${CMAKE_CURRENT_BINARY_DIR}/rlbot_generated.h
 
 		Bot.cpp
 		BotContext.cpp
@@ -112,16 +47,18 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 		)
 	endif()
 
-	target_include_directories(${TARGET} PUBLIC
-		include
+	target_include_directories(${TARGET} PUBLIC include)
+
+	target_include_directories(${TARGET} SYSTEM PUBLIC
 		${flatbuffers_SOURCE_DIR}/include
 		${tracy_SOURCE_DIR}/public
-		${CMAKE_CURRENT_BINARY_DIR}
 	)
 
+	add_dependencies(${TARGET} rlbot-generated)
+	target_include_directories(${TARGET} SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/..)
+
 	if(LINUX)
-		target_include_directories(${TARGET} PRIVATE ${liburing_SOURCE_DIR}/src/include)
-		#target_link_directories(${TARGET} PRIVATE ${liburing_SOURCE_DIR}/src)
+		target_include_directories(${TARGET} SYSTEM PRIVATE ${liburing_SOURCE_DIR}/src/include)
 		target_link_libraries(${TARGET} PRIVATE ${liburing_SOURCE_DIR}/src/liburing.a)
 	endif()
 
@@ -193,9 +130,9 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 		FLATBUFFERS_USE_STD_SPAN=1
 	)
 
-	if(ENABLE_LTO)
+	if(LTO_SUPPORTED)
 		set_target_properties(${TARGET} PROPERTIES
-			$<$<BOOL:${RLBOT_CPP_ENABLE_LTO}>:INTERPROCEDURAL_OPTIMIZATION TRUE>
+			INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_CPP_ENABLE_LTO}>
 			INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
 		)
 	endif()
