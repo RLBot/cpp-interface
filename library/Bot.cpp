@@ -2,8 +2,8 @@
 using namespace rlbot;
 
 ///////////////////////////////////////////////////////////////////////////
-Bot::Bot (unsigned index_, unsigned team_, std::string name_) noexcept
-    : index (index_), team (team_), name (std::move (name_))
+Bot::Bot (std::unordered_set<unsigned> indices_, unsigned team_, std::string name_) noexcept
+    : indices (std::move (indices_)), team (team_), name (std::move (name_))
 {
 }
 
@@ -12,9 +12,10 @@ void Bot::matchComm (rlbot::flat::MatchComm const *const matchComm_) noexcept
 	(void)matchComm_;
 }
 
-std::optional<rlbot::flat::PlayerLoadoutT> Bot::getLoadout () noexcept
+std::optional<rlbot::flat::PlayerLoadoutT> Bot::getLoadout (unsigned const index_) noexcept
 {
 	// no loadout
+	(void)index_;
 	return std::nullopt;
 }
 
@@ -66,11 +67,12 @@ std::optional<std::unordered_map<int, std::vector<rlbot::flat::RenderMessageT>>>
 	return result;
 }
 
-void Bot::sendMatchComm (std::string display_,
+void Bot::sendMatchComm (unsigned const index_,
+    std::string display_,
     std::vector<std::uint8_t> data_,
     bool const teamOnly_) noexcept
 {
-	if (display_.empty () && data_.empty ())
+	if (!indices.contains (index_) || (display_.empty () && data_.empty ()))
 		return;
 
 	auto const lock = std::scoped_lock (m_mutex);
@@ -80,7 +82,7 @@ void Bot::sendMatchComm (std::string display_,
 
 	auto &matchComm = m_matchComms->emplace_back ();
 
-	matchComm.index     = index;
+	matchComm.index     = index_;
 	matchComm.team      = team;
 	matchComm.team_only = teamOnly_;
 	matchComm.display   = std::move (display_);

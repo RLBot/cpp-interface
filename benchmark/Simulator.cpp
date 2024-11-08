@@ -213,6 +213,8 @@ Simulator::Simulator (Private) noexcept
 {
 	m_ballPrediction.slices.resize (6 * 120);
 
+	constexpr auto NUM_CARS = 2;
+	for (unsigned i = 0; i < NUM_CARS; ++i)
 	{
 		auto &player =
 		    m_gamePacket.players.emplace_back (std::make_unique<rlbot::flat::PlayerInfoT> ());
@@ -295,14 +297,17 @@ bool Simulator::run () noexcept
 
 	m_delays.clear ();
 
-	m_car = m_arena->AddCar (RocketSim::Team::BLUE);
+	for (auto &player : m_gamePacket.players)
+	{
+		auto const car = m_cars.emplace_back (m_arena->AddCar (RocketSim::Team::BLUE));
+
+		player->hitbox->length = car->config.hitboxSize.x;
+		player->hitbox->width  = car->config.hitboxSize.y;
+		player->hitbox->height = car->config.hitboxSize.z;
+		*player->hitbox_offset = fromRocketSim (car->config.hitboxPosOffset);
+	}
+
 	m_arena->ResetToRandomKickoff ();
-
-	m_gamePacket.players[0]->hitbox->length = m_car->config.hitboxSize.x;
-	m_gamePacket.players[0]->hitbox->width  = m_car->config.hitboxSize.y;
-	m_gamePacket.players[0]->hitbox->height = m_car->config.hitboxSize.z;
-
-	*m_gamePacket.players[0]->hitbox_offset = fromRocketSim (m_car->config.hitboxPosOffset);
 
 	constexpr auto tps = 120;
 
@@ -336,8 +341,8 @@ bool Simulator::run () noexcept
 		if (!sendGamePacket ())
 			return false;
 
-		bool input = false;
-		while (!input)
+		unsigned inputs = 0;
+		while (inputs < m_gamePacket.players.size ())
 		{
 			auto message = readMessage ();
 			if (!message)
@@ -348,7 +353,7 @@ bool Simulator::run () noexcept
 			case MessageType::PlayerInput:
 				if (!handlePlayerInput (std::move (message)))
 					return false;
-				input = true;
+				++inputs;
 				break;
 
 			default:
@@ -431,12 +436,14 @@ bool Simulator::sendMatchSettings () noexcept
 	matchSettings.enable_rendering     = true;
 	matchSettings.enable_state_setting = true;
 
+	for (unsigned i = 0; i < m_gamePacket.players.size (); ++i)
 	{
 		auto &playerConfig = matchSettings.player_configurations.emplace_back (
 		    std::make_unique<rlbot::flat::PlayerConfigurationT> ());
 
 		playerConfig->variety.Set (rlbot::flat::RLBotT{});
 		playerConfig->agent_id = m_agendId;
+		playerConfig->spawn_id = i;
 	}
 
 	matchSettings.mutator_settings = std::make_unique<rlbot::flat::MutatorSettingsT> ();
@@ -456,10 +463,13 @@ bool Simulator::sendControllableTeamInfo () noexcept
 	rlbot::flat::ControllableTeamInfoT controllableTeamInfo;
 	controllableTeamInfo.team = 0;
 
-	auto &player = controllableTeamInfo.controllables.emplace_back (
-	    std::make_unique<rlbot::flat::ControllableInfoT> ());
-	player->index    = 0;
-	player->spawn_id = 0;
+	for (unsigned i = 0; i < m_gamePacket.players.size (); ++i)
+	{
+		auto &controllable = controllableTeamInfo.controllables.emplace_back (
+		    std::make_unique<rlbot::flat::ControllableInfoT> ());
+		controllable->index    = i;
+		controllable->spawn_id = i;
+	}
 
 	auto fbb = m_fbbPool->getObject ();
 	fbb->Finish (rlbot::flat::CreateControllableTeamInfo (*fbb, &controllableTeamInfo));
@@ -497,13 +507,16 @@ bool Simulator::sendBallPrediction () noexcept
 
 bool Simulator::sendGamePacket () noexcept
 {
-	*m_gamePacket.players[0]->physics =
-	    rlbot::flat::Physics (fromRocketSim (m_car->GetState ().pos),
-	        fromRocketSim (m_car->GetState ().rotMat),
-	        fromRocketSim (m_car->GetState ().vel),
-	        fromRocketSim (m_car->GetState ().angVel));
+	for (unsigned i = 0; auto &player : m_gamePacket.players)
+	{
+		auto const car   = m_cars[i++];
+		*player->physics = rlbot::flat::Physics (fromRocketSim (car->GetState ().pos),
+		    fromRocketSim (car->GetState ().rotMat),
+		    fromRocketSim (car->GetState ().vel),
+		    fromRocketSim (car->GetState ().angVel));
 
-	m_gamePacket.players[0]->boost = m_car->GetState ().boost;
+		player->boost = car->GetState ().boost;
+	}
 
 	auto fbb = m_fbbPool->getObject ();
 	fbb->Finish (rlbot::flat::CreateGamePacket (*fbb, &m_gamePacket));
@@ -530,16 +543,21 @@ bool Simulator::handlePlayerInput (Message message_) noexcept
 	if (!state)
 		return false;
 
-	*m_gamePacket.players[0]->last_input = *state;
+	if (input->player_index () >= std::min (m_cars.size (), m_gamePacket.players.size ()))
+		return false;
 
-	m_car->controls.throttle  = state->throttle ();
-	m_car->controls.steer     = state->steer ();
-	m_car->controls.pitch     = state->pitch ();
-	m_car->controls.yaw       = state->yaw ();
-	m_car->controls.roll      = state->roll ();
-	m_car->controls.jump      = state->jump ();
-	m_car->controls.boost     = state->boost ();
-	m_car->controls.handbrake = state->handbrake ();
+	auto const car = m_cars[input->player_index ()];
+
+	*m_gamePacket.players[input->player_index ()]->last_input = *state;
+
+	car->controls.throttle  = state->throttle ();
+	car->controls.steer     = state->steer ();
+	car->controls.pitch     = state->pitch ();
+	car->controls.yaw       = state->yaw ();
+	car->controls.roll      = state->roll ();
+	car->controls.jump      = state->jump ();
+	car->controls.boost     = state->boost ();
+	car->controls.handbrake = state->handbrake ();
 
 	auto const sendTime = m_outTimestamps[static_cast<unsigned> (MessageType::GamePacket)];
 	auto const recvTime = m_inTimestamps[static_cast<unsigned> (MessageType::PlayerInput)];

@@ -5,7 +5,10 @@
 
 #include <rlbot_generated.h>
 
+#include <concepts>
 #include <memory>
+#include <string>
+#include <unordered_set>
 
 namespace rlbot
 {
@@ -54,8 +57,11 @@ public:
 
 protected:
 	/// @brief Parameterized constructor
+	/// @param batchHivemind_ Whether to batch hivemind
 	/// @param spawn_ Bot spawning function
-	BotManagerBase (std::unique_ptr<Bot> (&spawn_) (int, int, std::string) noexcept) noexcept;
+	BotManagerBase (bool batchHivemind_,
+	    std::unique_ptr<Bot> (
+	        &spawn_) (std::unordered_set<unsigned>, unsigned, std::string) noexcept) noexcept;
 
 	/// @brief Bot manager implementation
 	std::unique_ptr<detail::BotManagerImpl> m_impl;
@@ -64,23 +70,27 @@ protected:
 /// @brief Bot manager
 /// @tparam T Bot type
 template <typename T>
-    requires std::is_base_of_v<Bot, T>
+    requires std::derived_from<T, Bot>
 class BotManager final : public BotManagerBase
 {
 public:
-	BotManager () noexcept : BotManagerBase (BotManager::spawn)
+	/// @brief Parameterized constructor
+	/// @param batchHivemind_ Whether to batch hivemind
+	explicit BotManager (bool const batchHivemind_ = false) noexcept
+	    : BotManagerBase (batchHivemind_, BotManager::spawn)
 	{
 	}
 
 private:
 	/// @brief Bot spawning function
-	/// @param index_ Index into gameTickPacket->players ()
+	/// @param indices_ Index into gameTickPacket->players ()
 	/// @param team_ Team (0 = Blue, 1 = Orange)
 	/// @param name_ Bot name
-	static std::unique_ptr<Bot>
-	    spawn (int const index_, int const team_, std::string name_) noexcept
+	static std::unique_ptr<Bot> spawn (std::unordered_set<unsigned> indices_,
+	    unsigned const team_,
+	    std::string name_) noexcept
 	{
-		return std::make_unique<T> (index_, team_, std::move (name_));
+		return std::make_unique<T> (std::move (indices_), team_, std::move (name_));
 	}
 };
 }

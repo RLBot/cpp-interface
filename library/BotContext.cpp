@@ -17,12 +17,12 @@ BotContext::~BotContext () noexcept
 		m_thread.join ();
 }
 
-BotContext::BotContext (unsigned const index_,
+BotContext::BotContext (std::unordered_set<unsigned> indices_,
     std::unique_ptr<Bot> bot_,
     Message fieldInfo_,
     Message matchSettings_,
     BotManagerImpl &manager_) noexcept
-    : index (index_),
+    : indices (std::move (indices_)),
       m_manager (manager_),
       m_bot (std::move (bot_)),
       m_fieldInfoMessage (std::move (fieldInfo_)),
@@ -39,7 +39,6 @@ BotContext::BotContext (unsigned const index_,
 	m_matchCommsWork.reserve (128);
 
 	// preallocate player input
-	m_input.player_index     = index;
 	m_input.controller_state = std::make_unique<rlbot::flat::ControllerState> ();
 }
 
@@ -81,13 +80,23 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 	// process game packet next
 	auto const gamePacket     = gamePacketMessage.flatbuffer<rlbot::flat::GamePacket> ();
 	auto const ballPrediction = ballPredictionMessage.flatbuffer<rlbot::flat::BallPrediction> ();
-	if (gamePacket && gamePacket->players ()->size () > index)
+	if (gamePacket)
 	{
-		ZoneScopedNS ("bot", 16);
-		*m_input.controller_state =
-		    m_bot->getOutput (gamePacket, ballPrediction, m_fieldInfo, m_matchSettings);
+		{
+			ZoneScopedNS ("bot update", 16);
+			m_bot->update (gamePacket, ballPrediction, m_fieldInfo, m_matchSettings);
+		}
 
-		m_manager.enqueueMessage (m_input);
+		for (auto const &index : this->indices)
+		{
+			if (gamePacket->players ()->size () <= index)
+				continue;
+
+			ZoneScopedNS ("bot output", 16);
+			m_input.player_index      = index;
+			*m_input.controller_state = m_bot->getOutput (index);
+			m_manager.enqueueMessage (m_input);
+		}
 	}
 
 	// collect output match comms
@@ -96,7 +105,7 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 	{
 		for (auto const &matchComm : matchCommsOut.value ())
 		{
-			assert (matchComm.index == index);
+			assert (indices.contains (matchComm.index));
 			assert (matchComm.team == m_bot->team);
 
 			m_manager.enqueueMessage (matchComm);
@@ -179,7 +188,7 @@ void rlbot::detail::BotContext::addMatchComm (Message matchComm_, bool const not
 	assert (comm);
 
 	// don't handle message to self
-	if (comm->index () == m_bot->index)
+	if (m_bot->indices.contains (comm->index ()))
 		return;
 
 	// don't handle team-only message to other team

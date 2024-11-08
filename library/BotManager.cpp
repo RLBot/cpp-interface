@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <unordered_set>
 
 using namespace rlbot;
 using namespace rlbot::detail;
@@ -15,7 +16,7 @@ using namespace rlbot::detail;
 namespace
 {
 /// @brief Dummy spawn function
-std::unique_ptr<Bot> spawnNothing (int, int, std::string) noexcept
+std::unique_ptr<Bot> spawnNothing (std::unordered_set<unsigned>, unsigned, std::string) noexcept
 {
 	return {};
 }
@@ -27,9 +28,10 @@ BotManagerBase::~BotManagerBase () noexcept
 	m_impl->join ();
 }
 
-BotManagerBase::BotManagerBase (
-    std::unique_ptr<Bot> (&spawn_) (int, int, std::string) noexcept) noexcept
-    : m_impl (std::make_unique<detail::BotManagerImpl> (spawn_))
+BotManagerBase::BotManagerBase (bool const batchHivemind_,
+    std::unique_ptr<Bot> (
+        &spawn_) (std::unordered_set<unsigned>, unsigned, std::string) noexcept) noexcept
+    : m_impl (std::make_unique<detail::BotManagerImpl> (batchHivemind_, spawn_))
 {
 }
 
@@ -76,7 +78,7 @@ bool rlbot::BotManagerBase::startMatch (char const *const host_,
     char const *const port_,
     rlbot::flat::MatchSettingsT const &matchSettings_) noexcept
 {
-	auto agent = std::make_unique<detail::BotManagerImpl> (spawnNothing);
+	auto agent = std::make_unique<detail::BotManagerImpl> (false, spawnNothing);
 	if (!agent->run (host_, port_))
 		return false;
 

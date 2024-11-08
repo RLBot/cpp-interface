@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace rlbot
@@ -39,10 +40,15 @@ public:
 	/// @param matchSettings_  Match settings
 	/// @note The pointers are only valid for the duration of this call; make deep copies if
 	/// necessary!
-	virtual rlbot::flat::ControllerState getOutput (rlbot::flat::GamePacket const *gamePacket_,
+	virtual void update (rlbot::flat::GamePacket const *gamePacket_,
 	    rlbot::flat::BallPrediction const *ballPrediction_,
 	    rlbot::flat::FieldInfo const *fieldInfo_,
 	    rlbot::flat::MatchSettings const *matchSettings_) noexcept = 0;
+
+	/// @brief Get output from bot
+	/// The bot manager will call this function after update()
+	/// @param index_ Index into gamePacket->players ()
+	virtual rlbot::flat::ControllerState getOutput (unsigned index_) noexcept = 0;
 
 	/// @brief Called when match comms are received for this bot
 	/// @param matchComm_ Match comm
@@ -50,8 +56,9 @@ public:
 	virtual void matchComm (rlbot::flat::MatchComm const *matchComm_) noexcept;
 
 	/// @brief Get loadout for this bot
-	/// This is called when the manager receives MatchSettings
-	virtual std::optional<rlbot::flat::PlayerLoadoutT> getLoadout () noexcept;
+	/// This is called immediately after the bot is spawned
+	/// @param index_ Index into gamePacket->players ()
+	virtual std::optional<rlbot::flat::PlayerLoadoutT> getLoadout (unsigned index_) noexcept;
 
 	/// @brief Retrieves pending match comms
 	/// This is called by the bot manager after getOutput
@@ -68,24 +75,28 @@ public:
 	    getRenderMessages () noexcept;
 
 	/// @brief Index into gamePacket->players ()
-	unsigned const index;
+	std::unordered_set<unsigned> const indices;
 	/// @brief Team (0 = Blue, 1 = Orange)
 	unsigned const team;
 	/// @brief Bot name
 	std::string const name;
+	/// @brief Convenience storage for outputs
+	std::unordered_map<unsigned, rlbot::flat::ControllerState> outputs;
 
 protected:
 	/// @brief Parameterized constructor
-	/// @param index_ Index into gamePacket->players ()
+	/// @param indices_ Index into gamePacket->players ()
 	/// @param team_ Team (0 = Blue, 1 = Orange)
 	/// @param name_ Bot name
-	Bot (unsigned index_, unsigned team_, std::string name_) noexcept;
+	Bot (std::unordered_set<unsigned> indices_, unsigned team_, std::string name_) noexcept;
 
 	/// @brief Send match comms
+	/// @param index_ Index into gamePacket->players () of message sender
 	/// @param display_ Display value
 	/// @param data_ Data
 	/// @param teamOnly_ Whether to only send to teammates
-	void sendMatchComm (std::string display_,
+	void sendMatchComm (unsigned index_,
+	    std::string display_,
 	    std::vector<std::uint8_t> data_,
 	    bool teamOnly_) noexcept;
 

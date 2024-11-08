@@ -3,6 +3,8 @@
 #include <rlbot/Bot.h>
 
 #include <chrono>
+#include <string>
+#include <unordered_set>
 
 class ExampleBot final : public rlbot::Bot
 {
@@ -11,7 +13,7 @@ public:
 
 	ExampleBot () noexcept = delete;
 
-	ExampleBot (int index_, int team_, std::string name_) noexcept;
+	ExampleBot (std::unordered_set<unsigned> indices_, unsigned team_, std::string name_) noexcept;
 
 	ExampleBot (ExampleBot const &) noexcept = delete;
 
@@ -21,10 +23,12 @@ public:
 
 	ExampleBot &operator= (ExampleBot &&) noexcept = delete;
 
-	rlbot::flat::ControllerState getOutput (rlbot::flat::GamePacket const *packet_,
+	void update (rlbot::flat::GamePacket const *packet_,
 	    rlbot::flat::BallPrediction const *ballPrediction_,
 	    rlbot::flat::FieldInfo const *fieldInfo_,
 	    rlbot::flat::MatchSettings const *matchSettings_) noexcept override;
+
+	rlbot::flat::ControllerState getOutput (unsigned index_) noexcept override;
 
 	void matchComm (rlbot::flat::MatchComm const *matchComm_) noexcept override;
 

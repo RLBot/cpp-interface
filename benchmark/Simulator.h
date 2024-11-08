@@ -54,7 +54,7 @@ private:
 
 	std::unique_ptr<RocketSim::Arena> m_arena;
 	std::unique_ptr<RocketSim::BallPredTracker> m_ballPredTracker;
-	RocketSim::Car *m_car = nullptr;
+	std::vector<RocketSim::Car *> m_cars;
 
 	SOCKET m_sock = INVALID_SOCKET;
 

@@ -23,6 +23,7 @@ int (&closesocket) (int) = ::close;
 #include <cstring>
 #include <limits>
 #include <ranges>
+#include <unordered_set>
 
 using namespace rlbot::detail;
 
@@ -33,7 +34,8 @@ constexpr auto SOCKET_BUFFER_SIZE = 4 * (std::numeric_limits<std::uint16_t>::max
 
 constexpr auto COMPLETION_KEY_SOCKET      = 0;
 constexpr auto COMPLETION_KEY_WRITE_QUEUE = 1;
-constexpr auto COMPLETION_KEY_QUIT        = 2;
+constexpr auto COMPLETION_KEY_BOT_WAKEUP  = 2;
+constexpr auto COMPLETION_KEY_QUIT        = 3;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -42,9 +44,10 @@ BotManagerImpl::~BotManagerImpl () noexcept
 	join ();
 }
 
-BotManagerImpl::BotManagerImpl (
-    std::unique_ptr<Bot> (&spawn_) (int, int, std::string) noexcept) noexcept
-    : m_spawn (spawn_)
+BotManagerImpl::BotManagerImpl (bool const batchHivemind_,
+    std::unique_ptr<Bot> (
+        &spawn_) (std::unordered_set<unsigned>, unsigned, std::string) noexcept) noexcept
+    : m_spawn (spawn_), m_batchHivemind (batchHivemind_)
 {
 #ifdef _WIN32
 	m_inOverlapped.hEvent  = nullptr;
@@ -53,6 +56,7 @@ BotManagerImpl::BotManagerImpl (
 	m_inOverlapped         = COMPLETION_KEY_SOCKET;
 	m_outOverlapped        = COMPLETION_KEY_SOCKET;
 	m_writeQueueOverlapped = COMPLETION_KEY_WRITE_QUEUE;
+	m_botWakeupOverlapped  = COMPLETION_KEY_BOT_WAKEUP;
 	m_quitOverlapped       = COMPLETION_KEY_QUIT;
 #endif
 }
@@ -238,10 +242,7 @@ bool BotManagerImpl::run (char const *const host_, char const *const port_) noex
 
 	m_outputQueue.reserve (128);
 
-#ifdef _WIN32
-	for (unsigned i = 0; i < 2; ++i)
-#endif
-		m_serviceThreads.emplace_back (&BotManagerImpl::serviceThread, this);
+	m_serviceThread = std::thread (&BotManagerImpl::serviceThread, this);
 
 	m_inBuffer = getBuffer ();
 
@@ -269,54 +270,14 @@ void BotManagerImpl::terminate () noexcept
 	m_writerIdleCv.notify_all ();
 
 	m_quit.store (true, std::memory_order_relaxed);
-#ifdef _WIN32
-	if (m_iocpHandle)
-	{
-		auto const rc = PostQueuedCompletionStatus (m_iocpHandle, 0, COMPLETION_KEY_QUIT, nullptr);
-		if (!rc)
-			error ("PostQueuedCompletionStatus: %s\n", errorMessage ());
-	}
-#else
-	if (m_ringDestructor)
-	{
-		auto lock = std::unique_lock (m_ringSQMutex);
 
-		auto const sqe = io_uring_get_sqe (&m_ring);
-		assert (sqe);
-		if (!sqe)
-		{
-			lock.unlock ();
-			error ("io_uring_get_sqe: Queue is full\n");
-			terminate ();
-			return;
-		}
-
-		io_uring_prep_nop (sqe);
-
-		io_uring_sqe_set_data (sqe, &m_quitOverlapped);
-
-		auto const rc = io_uring_submit (&m_ring);
-		lock.unlock ();
-		if (rc <= 0)
-		{
-			if (rc < 0)
-				error ("io_uring_submit: %s\n", std::strerror (-rc));
-			else
-				error ("io_uring_submit: not submitted\n");
-			terminate ();
-		}
-	}
-#endif
+	pushEvent (COMPLETION_KEY_QUIT);
 }
 
 void BotManagerImpl::join () noexcept
 {
 	if (m_running.load (std::memory_order_relaxed))
-	{
-		for (auto &thread : m_serviceThreads)
-			thread.join ();
-		m_serviceThreads.clear ();
-	}
+		m_serviceThread.join ();
 
 	clearBots ();
 
@@ -436,9 +397,14 @@ void BotManagerImpl::enqueueMessage (Message message_) noexcept
 		for (auto &bot : m_bots | std::views::drop (1))
 			bot.addMatchComm (message_, true);
 
+		// first bot needs special handling
 		auto &bot = m_bots.front ();
 		bot.addMatchComm (message_, false);
-		bot.loopOnce ();
+
+		if (m_serviceThread.get_id () == std::this_thread::get_id ())
+			bot.loopOnce ();
+		else
+			pushEvent (COMPLETION_KEY_BOT_WAKEUP);
 	}
 }
 
@@ -472,6 +438,9 @@ void BotManagerImpl::spawnBots () noexcept
 
 	auto const team = controllableTeamInfo->team ();
 	rlbot::flat::SetLoadoutT loadoutMessage{};
+
+	std::unordered_set<unsigned> botIndices;
+	std::string name;
 	for (auto const &controllableInfo : *controllableTeamInfo->controllables ())
 	{
 		// find player in match settings with matching spawn id
@@ -491,18 +460,27 @@ void BotManagerImpl::spawnBots () noexcept
 		}
 
 		auto const index = controllableInfo->index ();
-		if (std::ranges::find (m_bots, index, [] (auto const &bot_) { return bot_.index; }) !=
-		    std::end (m_bots))
+		if (std::ranges::find (botIndices, index) != std::end (botIndices))
 		{
 			warning ("ControllableInfo duplicate bot index %u\n", index);
 			continue;
 		}
 
-		auto bot = m_spawn (index, team, player->name ()->str ());
+		botIndices.emplace (index);
 
-		auto loadout = bot->getLoadout ();
+		if (m_batchHivemind)
+		{
+			if (!name.empty ())
+				name = player->name ()->str ();
+			continue; // defer bot creation
+		}
 
-		m_bots.emplace_back (index, std::move (bot), m_fieldInfo, m_matchSettings, *this);
+		auto bot = m_spawn (botIndices, team, player->name ()->str ());
+
+		auto loadout = bot->getLoadout (index);
+
+		m_bots.emplace_back (
+		    std::move (botIndices), std::move (bot), m_fieldInfo, m_matchSettings, *this);
 
 		if (!loadout.has_value ())
 			continue;
@@ -513,6 +491,28 @@ void BotManagerImpl::spawnBots () noexcept
 		loadoutMessage.index    = index;
 		*loadoutMessage.loadout = std::move (loadout.value ());
 		enqueueMessage (loadoutMessage);
+	}
+
+	if (m_batchHivemind)
+	{
+		auto bot = m_spawn (botIndices, team, std::move (name));
+
+		for (auto const &index : botIndices)
+		{
+			auto loadout = bot->getLoadout (index);
+			if (!loadout.has_value ())
+				continue;
+
+			if (!loadoutMessage.loadout)
+				loadoutMessage.loadout = std::make_unique<rlbot::flat::PlayerLoadoutT> ();
+
+			loadoutMessage.index    = index;
+			*loadoutMessage.loadout = std::move (loadout.value ());
+			enqueueMessage (loadoutMessage);
+		}
+
+		m_bots.emplace_back (
+		    std::move (botIndices), std::move (bot), m_fieldInfo, m_matchSettings, *this);
 	}
 
 	// handle the first bot on the reader thread
@@ -1018,6 +1018,11 @@ void BotManagerImpl::serviceThread () noexcept
 			requestWrite ();
 			break;
 
+		case COMPLETION_KEY_BOT_WAKEUP:
+			if (!m_bots.empty ())
+				m_bots.front ().loopOnce ();
+			break;
+
 		case COMPLETION_KEY_QUIT:
 			// chain to next thread
 			terminate ();
@@ -1033,6 +1038,57 @@ Pool<Buffer>::Ref BotManagerImpl::getBuffer () noexcept
 	// reduce lock contention by spreading requests across multiple pools
 	auto const index = m_bufferPoolIndex.fetch_add (1, std::memory_order_relaxed);
 	return m_bufferPools[index % m_bufferPools.size ()]->getObject ();
+}
+
+void rlbot::detail::BotManagerImpl::pushEvent (int const event_) noexcept
+{
+#ifdef _WIN32
+	if (m_iocpHandle)
+	{
+		auto const rc = PostQueuedCompletionStatus (m_iocpHandle, 0, event_, nullptr);
+		if (!rc)
+			error ("PostQueuedCompletionStatus: %s\n", errorMessage ());
+	}
+#else
+	if (m_ringDestructor)
+	{
+		auto lock = std::unique_lock (m_ringSQMutex);
+
+		auto const sqe = io_uring_get_sqe (&m_ring);
+		assert (sqe);
+		if (!sqe)
+		{
+			lock.unlock ();
+			error ("io_uring_get_sqe: Queue is full\n");
+			terminate ();
+			return;
+		}
+
+		io_uring_prep_nop (sqe);
+
+		switch (event_)
+		{
+		case COMPLETION_KEY_BOT_WAKEUP:
+			io_uring_sqe_set_data (sqe, &m_botWakeupOverlapped);
+			break;
+
+		case COMPLETION_KEY_QUIT:
+			io_uring_sqe_set_data (sqe, &m_quitOverlapped);
+			break;
+		}
+
+		auto const rc = io_uring_submit (&m_ring);
+		lock.unlock ();
+		if (rc <= 0)
+		{
+			if (rc < 0)
+				error ("io_uring_submit: %s\n", std::strerror (-rc));
+			else
+				error ("io_uring_submit: not submitted\n");
+			terminate ();
+		}
+	}
+#endif
 }
 
 #define DEFINE_ENQUEUE(x)                                                                          \

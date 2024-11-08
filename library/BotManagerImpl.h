@@ -21,6 +21,7 @@
 #include <deque>
 #include <mutex>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace rlbot::detail
@@ -32,8 +33,11 @@ public:
 	~BotManagerImpl () noexcept;
 
 	/// @brief Parameterized constructor
+	/// @param batchHivemind_ Batch hivemind
 	/// @param spawn_ Bot spawning function
-	BotManagerImpl (std::unique_ptr<Bot> (&spawn_) (int, int, std::string) noexcept) noexcept;
+	BotManagerImpl (bool const batchHivemind_,
+	    std::unique_ptr<Bot> (
+	        &spawn_) (std::unordered_set<unsigned>, unsigned, std::string) noexcept) noexcept;
 
 	/// @brief Run bot manager
 	/// @param host_ RLBotServer address
@@ -123,6 +127,10 @@ private:
 	/// @brief Get buffer from pool
 	Pool<Buffer>::Ref getBuffer () noexcept;
 
+	/// @brief Push event
+	/// @param event_ Event to push
+	void pushEvent (int event_) noexcept;
+
 #ifdef _WIN32
 	/// @brief WSA data
 	WsaData m_wsaData;
@@ -156,15 +164,17 @@ private:
 	int m_outOverlapped;
 	/// @brief Discriminator for write queue event
 	int m_writeQueueOverlapped;
+	/// @brief Discriminator for bot wakeup event
+	int m_botWakeupOverlapped;
 	/// @brief Discriminator for quit event
 	int m_quitOverlapped;
 #endif
 
 	/// @brief Bot spawner
-	std::unique_ptr<Bot> (&m_spawn) (int, int, std::string) noexcept;
+	std::unique_ptr<Bot> (&m_spawn) (std::unordered_set<unsigned>, unsigned, std::string) noexcept;
 
-	/// @brief Service threads
-	std::vector<std::thread> m_serviceThreads;
+	/// @brief Service thread
+	std::thread m_serviceThread;
 	/// @brief Signal to quit
 	std::atomic_bool m_quit = false;
 	/// @brief Whether manager is running
@@ -212,5 +222,8 @@ private:
 	Message m_fieldInfo;
 	/// @brief Match settings
 	Message m_matchSettings;
+
+	/// @brief Batch hivemind
+	bool const m_batchHivemind;
 };
 }

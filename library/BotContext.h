@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace rlbot::detail
@@ -25,12 +26,12 @@ public:
 	~BotContext () noexcept;
 
 	/// @brief Parameterized constructor
-	/// @param index_ Index into gamePacket->players ()
+	/// @param indices_ Index into gamePacket->players ()
 	/// @param bot_ Bot instance
 	/// @param fieldInfo_ Field info
 	/// @param matchSettings_ Match settings
 	/// @param manager_ Bot manager
-	explicit BotContext (unsigned index_,
+	explicit BotContext (std::unordered_set<unsigned> indices_,
 	    std::unique_ptr<Bot> bot_,
 	    Message fieldInfo_,
 	    Message matchSettings_,
@@ -62,7 +63,7 @@ public:
 	void addMatchComm (Message matchComm_, bool notify_) noexcept;
 
 	/// @brief index_ Index into gamePacket->players ()
-	unsigned const index;
+	std::unordered_set<unsigned> const indices;
 
 private:
 	/// @brief Bot service loop
