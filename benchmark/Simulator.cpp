@@ -441,7 +441,7 @@ bool Simulator::sendMatchSettings () noexcept
 		auto &playerConfig = matchSettings.player_configurations.emplace_back (
 		    std::make_unique<rlbot::flat::PlayerConfigurationT> ());
 
-		playerConfig->variety.Set (rlbot::flat::RLBotT{});
+		playerConfig->variety.Set (rlbot::flat::CustomBotT{});
 		playerConfig->agent_id = m_agendId;
 		playerConfig->spawn_id = i;
 	}

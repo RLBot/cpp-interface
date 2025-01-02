@@ -55,7 +55,7 @@ bool BotManagerBase::run (char const *const host_,
 	    .agent_id               = agentId_,
 	    .wants_ball_predictions = ballPrediction_,
 	    .wants_comms            = true,
-	    .close_after_match      = true,
+	    .close_between_matches  = true,
 	    //
 	};
 

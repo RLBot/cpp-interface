@@ -45,7 +45,7 @@ int main (int argc_, char *argv_[])
 	for (unsigned i = 0; i < 4; ++i)
 	{
 		auto player = std::make_unique<rlbot::flat::PlayerConfigurationT> ();
-		player->variety.Set (rlbot::flat::RLBotT{});
+		player->variety.Set (rlbot::flat::CustomBotT{});
 		player->team     = i % 2;
 		player->root_dir = cwd;
 #ifdef _WIN32
