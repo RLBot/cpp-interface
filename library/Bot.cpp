@@ -7,6 +7,11 @@ Bot::Bot (std::unordered_set<unsigned> indices_, unsigned team_, std::string nam
 {
 }
 
+rlbot::flat::ControllerState Bot::getOutput (unsigned const index_) noexcept
+{
+	return outputs[index_];
+}
+
 void Bot::matchComm (rlbot::flat::MatchComm const *const matchComm_) noexcept
 {
 	(void)matchComm_;

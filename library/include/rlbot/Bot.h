@@ -48,7 +48,7 @@ public:
 	/// @brief Get output from bot
 	/// The bot manager will call this function after update()
 	/// @param index_ Index into gamePacket->players ()
-	virtual rlbot::flat::ControllerState getOutput (unsigned index_) noexcept = 0;
+	virtual rlbot::flat::ControllerState getOutput (unsigned index_) noexcept;
 
 	/// @brief Called when match comms are received for this bot
 	/// @param matchComm_ Match comm
