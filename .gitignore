@@ -1,7 +1,10 @@
 .vscode/
 build/
 
-ExampleBot/ExampleBot
-ExampleBot/ExampleBot.exe
-ExampleBot/ExampleBot-Launcher
-ExampleBot/ExampleBot-Launcher.exe
+examples/ATBA/ATBA
+examples/ATBA/ATBA.exe
+
+examples/ExampleBot/ExampleBot
+examples/ExampleBot/ExampleBot.exe
+examples/ExampleBot/ExampleBot-Launcher
+examples/ExampleBot/ExampleBot-Launcher.exe

@@ -68,4 +68,5 @@ add_custom_target(rlbot-generated DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/rlbot_gene
 
 add_subdirectory(library)
 add_subdirectory(benchmark)
-add_subdirectory(ExampleBot)
+add_subdirectory(examples/ATBA)
+add_subdirectory(examples/ExampleBot)

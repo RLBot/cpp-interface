@@ -28,8 +28,6 @@ public:
 	    rlbot::flat::FieldInfo const *fieldInfo_,
 	    rlbot::flat::MatchSettings const *matchSettings_) noexcept override;
 
-	rlbot::flat::ControllerState getOutput (unsigned index_) noexcept override;
-
 	void matchComm (rlbot::flat::MatchComm const *matchComm_) noexcept override;
 
 private:

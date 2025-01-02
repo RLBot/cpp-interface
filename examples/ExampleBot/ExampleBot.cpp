@@ -146,11 +146,6 @@ void ExampleBot::update (rlbot::flat::GamePacket const *const packet_,
 	}
 }
 
-rlbot::flat::ControllerState ExampleBot::getOutput (unsigned const index_) noexcept
-{
-	return outputs[index_];
-}
-
 void ExampleBot::matchComm (rlbot::flat::MatchComm const *const matchComm_) noexcept
 {
 	auto const display = matchComm_->display ();
