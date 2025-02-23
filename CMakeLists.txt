@@ -18,7 +18,7 @@ FetchContent_Populate(flatbuffers)
 
 FetchContent_Declare(flatbuffers_schema
 	GIT_REPOSITORY https://github.com/RLBot/flatbuffers-schema.git
-	GIT_TAG eba5076a594b9fa866c33ffbea8f8a47c5e78de4
+	GIT_TAG ac7c8cf38b9d6981d37a5d02afdd44d9ecd43a25
 )
 FetchContent_Populate(flatbuffers_schema)
 
@@ -58,8 +58,9 @@ add_custom_command(
 		${FLATC} --cpp --gen-object-api --gen-all --cpp-std c++17 ${flatbuffers_schema_SOURCE_DIR}/rlbot.fbs
 	DEPENDS
 		${flatbuffers_schema_SOURCE_DIR}/comms.fbs
-		${flatbuffers_schema_SOURCE_DIR}/gamestate.fbs
-		${flatbuffers_schema_SOURCE_DIR}/matchstart.fbs
+		${flatbuffers_schema_SOURCE_DIR}/gamedata.fbs
+		${flatbuffers_schema_SOURCE_DIR}/gamestatemanip.fbs
+		${flatbuffers_schema_SOURCE_DIR}/matchconfig.fbs
 		${flatbuffers_schema_SOURCE_DIR}/rlbot.fbs
 		${flatbuffers_schema_SOURCE_DIR}/rendering.fbs
 )

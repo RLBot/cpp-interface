@@ -38,7 +38,7 @@ private:
 	bool init () noexcept;
 
 	bool sendFieldInfo () noexcept;
-	bool sendMatchSettings () noexcept;
+	bool sendMatchConfiguration () noexcept;
 	bool sendControllableTeamInfo () noexcept;
 	bool sendBallPrediction () noexcept;
 	bool sendGamePacket () noexcept;
