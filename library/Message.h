@@ -17,7 +17,7 @@ enum class MessageType
 	GamePacket,
 	FieldInfo,
 	StartCommand,
-	MatchSettings,
+	MatchConfiguration,
 	PlayerInput,
 	DesiredGameState,
 	RenderGroup,
@@ -92,7 +92,8 @@ private:
 extern template rlbot::flat::GamePacket const *Message::flatbuffer (bool verify_) const noexcept;
 extern template rlbot::flat::FieldInfo const *Message::flatbuffer (bool verify_) const noexcept;
 extern template rlbot::flat::StartCommand const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::MatchSettings const *Message::flatbuffer (bool verify_) const noexcept;
+extern template rlbot::flat::MatchConfiguration const *Message::flatbuffer (
+    bool verify_) const noexcept;
 extern template rlbot::flat::PlayerInput const *Message::flatbuffer (bool verify_) const noexcept;
 extern template rlbot::flat::DesiredGameState const *Message::flatbuffer (
     bool verify_) const noexcept;

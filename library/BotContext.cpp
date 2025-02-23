@@ -2,6 +2,7 @@
 
 #include "BotManagerImpl.h"
 #include "Log.h"
+#include <chrono>
 
 using namespace rlbot::detail;
 
@@ -20,19 +21,20 @@ BotContext::~BotContext () noexcept
 BotContext::BotContext (std::unordered_set<unsigned> indices_,
     std::unique_ptr<Bot> bot_,
     Message fieldInfo_,
-    Message matchSettings_,
+    Message matchConfiguration_,
     BotManagerImpl &manager_) noexcept
     : indices (std::move (indices_)),
       m_manager (manager_),
       m_bot (std::move (bot_)),
       m_fieldInfoMessage (std::move (fieldInfo_)),
-      m_matchSettingsMessage (std::move (matchSettings_))
+      m_matchConfigurationMessage (std::move (matchConfiguration_))
 {
 	// decode field info and match settings
-	m_fieldInfo     = m_fieldInfoMessage.flatbuffer<rlbot::flat::FieldInfo> ();
-	m_matchSettings = m_matchSettingsMessage.flatbuffer<rlbot::flat::MatchSettings> ();
+	m_fieldInfo = m_fieldInfoMessage.flatbuffer<rlbot::flat::FieldInfo> ();
+	m_matchConfiguration =
+	    m_matchConfigurationMessage.flatbuffer<rlbot::flat::MatchConfiguration> ();
 
-	assert (m_fieldInfo && m_matchSettings);
+	assert (m_fieldInfo && m_matchConfiguration);
 
 	// preallocate matchComms
 	m_matchCommsIn.reserve (128);
@@ -84,7 +86,7 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 	{
 		{
 			ZoneScopedNS ("bot update", 16);
-			m_bot->update (gamePacket, ballPrediction, m_fieldInfo, m_matchSettings);
+			m_bot->update (gamePacket, ballPrediction, m_fieldInfo, m_matchConfiguration);
 		}
 
 		for (auto const &index : this->indices)
@@ -114,7 +116,7 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 
 	// collect render messages
 	auto const renderMessages = m_bot->getRenderMessages ();
-	if (renderMessages.has_value () && m_matchSettings->enable_rendering ())
+	if (renderMessages.has_value () && m_matchConfiguration->enable_rendering ())
 	{
 		for (auto const &[group, renderMessages] : renderMessages.value ())
 		{
@@ -143,7 +145,7 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 
 	// collect desired game state
 	auto const gameState = m_bot->getDesiredGameState ();
-	if (gameState.has_value () && m_matchSettings->enable_state_setting ())
+	if (gameState.has_value () && m_matchConfiguration->enable_state_setting ())
 		m_manager.enqueueMessage (gameState.value ());
 
 	lock_.lock ();

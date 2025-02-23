@@ -42,18 +42,18 @@ public:
 	void terminate () noexcept;
 
 	/// @brief Start match
-	/// @param matchSettings_ Match settings
+	/// @param matchConfiguration_ Match settings
 	/// @note Uses this manager's agent to start a match
-	void startMatch (rlbot::flat::MatchSettingsT const &matchSettings_) noexcept;
+	void startMatch (rlbot::flat::MatchConfigurationT const &matchConfiguration_) noexcept;
 
 	/// @brief Start match
 	/// @param host_ RLBotServer address
 	/// @param port_ RLBotServer port
-	/// @param matchSettings_ Match settings
+	/// @param matchConfiguration_ Match settings
 	/// @note Uses a temporary agent to start a match
 	static bool startMatch (char const *host_,
 	    char const *port_,
-	    rlbot::flat::MatchSettingsT const &matchSettings_) noexcept;
+	    rlbot::flat::MatchConfigurationT const &matchConfiguration_) noexcept;
 
 protected:
 	/// @brief Parameterized constructor

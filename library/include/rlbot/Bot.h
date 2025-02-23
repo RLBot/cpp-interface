@@ -37,13 +37,13 @@ public:
 	/// @param gamePacket_ Game packet
 	/// @param ballPrediction_ Ball prediction (can be null)
 	/// @param fieldInfo_  Field info
-	/// @param matchSettings_  Match settings
+	/// @param matchConfiguration_  Match settings
 	/// @note The pointers are only valid for the duration of this call; make deep copies if
 	/// necessary!
 	virtual void update (rlbot::flat::GamePacket const *gamePacket_,
 	    rlbot::flat::BallPrediction const *ballPrediction_,
 	    rlbot::flat::FieldInfo const *fieldInfo_,
-	    rlbot::flat::MatchSettings const *matchSettings_) noexcept = 0;
+	    rlbot::flat::MatchConfiguration const *matchConfiguration_) noexcept = 0;
 
 	/// @brief Get output from bot
 	/// The bot manager will call this function after update()

@@ -24,7 +24,7 @@ ATBA::ATBA (std::unordered_set<unsigned> indices_, unsigned const team_, std::st
 void ATBA::update (rlbot::flat::GamePacket const *const packet_,
     rlbot::flat::BallPrediction const *const ballPrediction_,
     rlbot::flat::FieldInfo const *const fieldInfo_,
-    rlbot::flat::MatchSettings const *const matchSettings_) noexcept
+    rlbot::flat::MatchConfiguration const *const matchConfiguration_) noexcept
 {
 	for (auto const &index : this->indices)
 	{
