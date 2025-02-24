@@ -32,7 +32,7 @@ int main (int argc_, char *argv_[])
 	auto const port = argv_[2];
 
 	/// map names at https://github.com/VirxEC/python-interface/blob/master/rlbot/utils/maps.py
-	rlbot::flat::MatchSettingsT ms{};
+	rlbot::flat::MatchConfigurationT ms{};
 	ms.auto_start_bots         = true;
 	ms.game_map_upk            = "Stadium_P";
 	ms.game_mode               = rlbot::flat::GameMode::Soccer;

@@ -61,7 +61,7 @@ ExampleBot::ExampleBot (std::unordered_set<unsigned> indices_,
 void ExampleBot::update (rlbot::flat::GamePacket const *const packet_,
     rlbot::flat::BallPrediction const *const ballPrediction_,
     rlbot::flat::FieldInfo const *const fieldInfo_,
-    rlbot::flat::MatchSettings const *const matchSettings_) noexcept
+    rlbot::flat::MatchConfiguration const *const matchConfig_) noexcept
 {
 	auto const now = std::chrono::steady_clock::now ();
 

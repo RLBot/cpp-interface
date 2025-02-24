@@ -14,6 +14,13 @@ int main (int argc_, char *argv_[])
 		return EXIT_FAILURE;
 	}
 
+	auto const serverIp = [] () -> char const * {
+		auto const env = std::getenv ("RLBOT_SERVER_IP");
+		if (env)
+			return env;
+		return "127.0.0.1";
+	}();
+
 	auto const serverPort = [] () -> char const * {
 		auto const env = std::getenv ("RLBOT_SERVER_PORT");
 		if (env)
@@ -21,7 +28,7 @@ int main (int argc_, char *argv_[])
 		return "23234";
 	}();
 
-	auto const host = argc_ > 1 ? argv_[1] : "127.0.0.1";
+	auto const host = argc_ > 1 ? argv_[1] : serverIp;
 	auto const port = argc_ > 2 ? argv_[2] : serverPort;
 
 	rlbot::BotManager<ATBA> manager{true};

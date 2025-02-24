@@ -26,7 +26,7 @@ public:
 	void update (rlbot::flat::GamePacket const *packet_,
 	    rlbot::flat::BallPrediction const *ballPrediction_,
 	    rlbot::flat::FieldInfo const *fieldInfo_,
-	    rlbot::flat::MatchSettings const *matchSettings_) noexcept override;
+	    rlbot::flat::MatchConfiguration const *matchConfig_) noexcept override;
 
 	void matchComm (rlbot::flat::MatchComm const *matchComm_) noexcept override;
 

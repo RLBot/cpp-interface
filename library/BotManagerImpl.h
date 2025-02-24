@@ -77,7 +77,7 @@ public:
 	DECLARE_ENQUEUE (GamePacket);
 	DECLARE_ENQUEUE (FieldInfo);
 	DECLARE_ENQUEUE (StartCommand);
-	DECLARE_ENQUEUE (MatchSettings);
+	DECLARE_ENQUEUE (MatchConfiguration);
 	DECLARE_ENQUEUE (PlayerInput);
 	DECLARE_ENQUEUE (DesiredGameState);
 	DECLARE_ENQUEUE (RenderGroup);
@@ -220,8 +220,8 @@ private:
 	Message m_controllableTeamInfo;
 	/// @brief Field info
 	Message m_fieldInfo;
-	/// @brief Match settings
-	Message m_matchSettings;
+	/// @brief Match configuration
+	Message m_matchConfig;
 
 	/// @brief Batch hivemind
 	bool const m_batchHivemind;

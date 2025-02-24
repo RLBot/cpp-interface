@@ -416,7 +416,7 @@ void BotManagerImpl::enqueueMessage (MessageType type_,
 
 void BotManagerImpl::spawnBots () noexcept
 {
-	if (!m_controllableTeamInfo || !m_fieldInfo || !m_matchSettings)
+	if (!m_controllableTeamInfo || !m_fieldInfo || !m_matchConfig)
 		return;
 
 	clearBots ();
@@ -428,13 +428,13 @@ void BotManagerImpl::spawnBots () noexcept
 	auto const controllableTeamInfo =
 	    m_controllableTeamInfo.flatbuffer<rlbot::flat::ControllableTeamInfo> (true);
 	auto const fieldInfo     = m_fieldInfo.flatbuffer<rlbot::flat::FieldInfo> (true);
-	auto const matchSettings = m_matchSettings.flatbuffer<rlbot::flat::MatchSettings> (true);
-	if (!controllableTeamInfo || !fieldInfo || !matchSettings)
+	auto const matchConfig = m_matchConfig.flatbuffer<rlbot::flat::MatchConfiguration> (true);
+	if (!controllableTeamInfo || !fieldInfo || !matchConfig)
 		return;
 
 	assert (m_bots.empty ());
 
-	auto const &configs = *matchSettings->player_configurations ();
+	auto const &configs = *matchConfig->player_configurations ();
 
 	auto const team = controllableTeamInfo->team ();
 	rlbot::flat::SetLoadoutT loadoutMessage{};
@@ -480,7 +480,7 @@ void BotManagerImpl::spawnBots () noexcept
 		auto loadout = bot->getLoadout (index);
 
 		m_bots.emplace_back (
-		    std::move (botIndices), std::move (bot), m_fieldInfo, m_matchSettings, *this);
+		    std::move (botIndices), std::move (bot), m_fieldInfo, m_matchConfig, *this);
 
 		if (!loadout.has_value ())
 			continue;
@@ -512,7 +512,7 @@ void BotManagerImpl::spawnBots () noexcept
 		}
 
 		m_bots.emplace_back (
-		    std::move (botIndices), std::move (bot), m_fieldInfo, m_matchSettings, *this);
+		    std::move (botIndices), std::move (bot), m_fieldInfo, m_matchConfig, *this);
 	}
 
 	// handle the first bot on the reader thread
@@ -568,16 +568,16 @@ void BotManagerImpl::handleMessage (Message message_) noexcept
 		return;
 	}
 
-	if (message_.type () == MessageType::MatchSettings) [[unlikely]]
+	if (message_.type () == MessageType::MatchConfiguration) [[unlikely]]
 	{
-		ZoneScopedNS ("handle MatchSettings", 16);
+		ZoneScopedNS ("handle MatchConfig", 16);
 
-		auto const payload = message_.flatbuffer<rlbot::flat::MatchSettings> (true);
+		auto const payload = message_.flatbuffer<rlbot::flat::MatchConfiguration> (true);
 		if (!payload) [[unlikely]]
 			return;
 
-		info ("Received MatchSettings\n");
-		m_matchSettings = std::move (message_);
+		info ("Received MatchConfig\n");
+		m_matchConfig = std::move (message_);
 		spawnBots ();
 		return;
 	}
@@ -1103,7 +1103,7 @@ void rlbot::detail::BotManagerImpl::pushEvent (int const event_) noexcept
 DEFINE_ENQUEUE (GamePacket)
 DEFINE_ENQUEUE (FieldInfo)
 DEFINE_ENQUEUE (StartCommand)
-DEFINE_ENQUEUE (MatchSettings)
+DEFINE_ENQUEUE (MatchConfiguration)
 DEFINE_ENQUEUE (PlayerInput)
 DEFINE_ENQUEUE (DesiredGameState)
 DEFINE_ENQUEUE (RenderGroup)

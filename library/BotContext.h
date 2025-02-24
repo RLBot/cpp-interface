@@ -29,12 +29,12 @@ public:
 	/// @param indices_ Index into gamePacket->players ()
 	/// @param bot_ Bot instance
 	/// @param fieldInfo_ Field info
-	/// @param matchSettings_ Match settings
+	/// @param matchConfig_ Match settings
 	/// @param manager_ Bot manager
 	explicit BotContext (std::unordered_set<unsigned> indices_,
 	    std::unique_ptr<Bot> bot_,
 	    Message fieldInfo_,
-	    Message matchSettings_,
+	    Message matchConfig_,
 	    BotManagerImpl &manager_) noexcept;
 
 	/// @brief Start bot service thread
@@ -96,13 +96,13 @@ private:
 	Message m_ballPredictionMessage;
 	/// @brief Field info message
 	Message m_fieldInfoMessage;
-	/// @brief Match settings message
-	Message m_matchSettingsMessage;
+	/// @brief Match config message
+	Message m_matchConfigMessage;
 
 	/// @brief Field info
 	rlbot::flat::FieldInfo const *m_fieldInfo = nullptr;
-	/// @brief Match settings
-	rlbot::flat::MatchSettings const *m_matchSettings = nullptr;
+	/// @brief Match configuration
+	rlbot::flat::MatchConfiguration const *m_matchConfig = nullptr;
 
 	/// @brief Signal to quit
 	std::atomic_bool m_quit = false;

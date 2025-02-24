@@ -69,20 +69,20 @@ void rlbot::BotManagerBase::terminate () noexcept
 	m_impl->terminate ();
 }
 
-void rlbot::BotManagerBase::startMatch (rlbot::flat::MatchSettingsT const &matchSettings_) noexcept
+void rlbot::BotManagerBase::startMatch (rlbot::flat::MatchConfigurationT const &matchConfig_) noexcept
 {
-	m_impl->enqueueMessage (matchSettings_);
+	m_impl->enqueueMessage (matchConfig_);
 }
 
 bool rlbot::BotManagerBase::startMatch (char const *const host_,
     char const *const port_,
-    rlbot::flat::MatchSettingsT const &matchSettings_) noexcept
+    rlbot::flat::MatchConfigurationT const &matchConfig_) noexcept
 {
 	auto agent = std::make_unique<detail::BotManagerImpl> (false, spawnNothing);
 	if (!agent->run (host_, port_))
 		return false;
 
-	agent->enqueueMessage (matchSettings_);
+	agent->enqueueMessage (matchConfig_);
 
 	agent->waitForWriterIdle ();
 	agent->terminate ();

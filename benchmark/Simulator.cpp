@@ -262,12 +262,12 @@ bool Simulator::run () noexcept
 			ball->shape.Set (rlbot::flat::SphereShapeT{});
 		}
 
-		if (!m_gamePacket.game_info)
+		if (!m_gamePacket.match_info)
 		{
-			m_gamePacket.game_info                  = std::make_unique<rlbot::flat::GameInfoT> ();
-			m_gamePacket.game_info->game_status     = rlbot::flat::GameStatus::Active;
-			m_gamePacket.game_info->world_gravity_z = m_arena->GetMutatorConfig ().gravity.z;
-			m_gamePacket.game_info->game_speed      = 1.0f;
+			m_gamePacket.match_info                  = std::make_unique<rlbot::flat::MatchInfoT> ();
+			m_gamePacket.match_info->match_phase     = rlbot::flat::MatchPhase::Active;
+			m_gamePacket.match_info->world_gravity_z = m_arena->GetMutatorConfig ().gravity.z;
+			m_gamePacket.match_info->game_speed      = 1.0f;
 		}
 
 		if (m_gamePacket.teams.empty ())
@@ -277,7 +277,7 @@ bool Simulator::run () noexcept
 		m_wantsBallPrediction = cs->wants_ball_predictions ();
 		m_wantsMatchComms     = cs->wants_comms ();
 
-		if (!sendFieldInfo () || !sendMatchSettings () || !sendControllableTeamInfo ())
+		if (!sendFieldInfo () || !sendMatchConfig () || !sendControllableTeamInfo ())
 			return false;
 
 		while (true)
@@ -430,15 +430,15 @@ bool Simulator::sendFieldInfo () noexcept
 	return writeMessage (message);
 }
 
-bool Simulator::sendMatchSettings () noexcept
+bool Simulator::sendMatchConfig () noexcept
 {
-	rlbot::flat::MatchSettingsT matchSettings;
-	matchSettings.enable_rendering     = true;
-	matchSettings.enable_state_setting = true;
+	rlbot::flat::MatchConfigurationT matchConfig;
+	matchConfig.enable_rendering     = true;
+	matchConfig.enable_state_setting = true;
 
 	for (unsigned i = 0; i < m_gamePacket.players.size (); ++i)
 	{
-		auto &playerConfig = matchSettings.player_configurations.emplace_back (
+		auto &playerConfig = matchConfig.player_configurations.emplace_back (
 		    std::make_unique<rlbot::flat::PlayerConfigurationT> ());
 
 		playerConfig->variety.Set (rlbot::flat::CustomBotT{});
@@ -446,12 +446,12 @@ bool Simulator::sendMatchSettings () noexcept
 		playerConfig->spawn_id = i;
 	}
 
-	matchSettings.mutator_settings = std::make_unique<rlbot::flat::MutatorSettingsT> ();
+	matchConfig.mutators = std::make_unique<rlbot::flat::MutatorSettingsT> ();
 
 	auto fbb = m_fbbPool->getObject ();
-	fbb->Finish (rlbot::flat::CreateMatchSettings (*fbb, &matchSettings));
+	fbb->Finish (rlbot::flat::CreateMatchConfiguration (*fbb, &matchConfig));
 
-	auto message = fillMessage (MessageType::MatchSettings, *fbb);
+	auto message = fillMessage (MessageType::MatchConfiguration, *fbb);
 	if (!message)
 		return false;
 
