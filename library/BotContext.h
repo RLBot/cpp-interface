@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -28,14 +29,22 @@ public:
 	/// @brief Parameterized constructor
 	/// @param indices_ Index into gamePacket->players ()
 	/// @param bot_ Bot instance
+	/// @param controllableTeamInfo_ Controllable team info
 	/// @param fieldInfo_ Field info
 	/// @param matchConfiguration_ Match settings
 	/// @param manager_ Bot manager
 	explicit BotContext (std::unordered_set<unsigned> indices_,
 	    std::unique_ptr<Bot> bot_,
+	    Message controllableTeamInfo_,
 	    Message fieldInfo_,
 	    Message matchConfiguration_,
 	    BotManagerImpl &manager_) noexcept;
+
+	/// @brief Initialize bot
+	void initialize () noexcept;
+
+	/// @brief Wait for bot initialization
+	void waitInitialized () noexcept;
 
 	/// @brief Start bot service thread
 	void startService () noexcept;
@@ -83,6 +92,11 @@ private:
 	/// @brief Bot instance
 	std::unique_ptr<Bot> m_bot;
 
+	/// @brief Initialization promise
+	std::promise<void> m_intializedPromise;
+	/// @brief Initialization future
+	std::future<void> m_intialized;
+
 	/// @brief Player input
 	rlbot::flat::PlayerInputT m_input{};
 
@@ -94,11 +108,15 @@ private:
 	Message m_gamePacketMessage;
 	/// @brief Ball prediction message
 	Message m_ballPredictionMessage;
+	/// @brief Controllable team info message
+	Message m_controllableTeamInfoMessage;
 	/// @brief Field info message
 	Message m_fieldInfoMessage;
 	/// @brief Match settings message
 	Message m_matchConfigurationMessage;
 
+	/// @brief Controllable team info
+	rlbot::flat::ControllableTeamInfo const *m_controllableTeamInfo = nullptr;
 	/// @brief Field info
 	rlbot::flat::FieldInfo const *m_fieldInfo = nullptr;
 	/// @brief Match settings

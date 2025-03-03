@@ -7,9 +7,19 @@ Bot::Bot (std::unordered_set<unsigned> indices_, unsigned team_, std::string nam
 {
 }
 
+void Bot::initialize (rlbot::flat::ControllableTeamInfo const *const controllableTeamInfo_,
+    rlbot::flat::FieldInfo const *const fieldInfo_,
+    rlbot::flat::MatchConfiguration const *const matchConfiguration_) noexcept
+{
+	(void)controllableTeamInfo_;
+	(void)fieldInfo_;
+	(void)matchConfiguration_;
+}
+
 rlbot::flat::ControllerState Bot::getOutput (unsigned const index_) noexcept
 {
-	return outputs[index_];
+	auto const lock = std::scoped_lock (m_mutex);
+	return m_outputs[index_];
 }
 
 void Bot::matchComm (rlbot::flat::MatchComm const *const matchComm_) noexcept
@@ -70,6 +80,15 @@ std::optional<std::unordered_map<int, std::vector<rlbot::flat::RenderMessageT>>>
 	}
 
 	return result;
+}
+
+void rlbot::Bot::setOutput (unsigned index_, rlbot::flat::ControllerState const &output_) noexcept
+{
+	if (!indices.contains (index_))
+		return;
+
+	auto const lock   = std::scoped_lock (m_mutex);
+	m_outputs[index_] = output_;
 }
 
 void Bot::sendMatchComm (unsigned const index_,

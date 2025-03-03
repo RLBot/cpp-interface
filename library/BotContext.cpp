@@ -20,21 +20,26 @@ BotContext::~BotContext () noexcept
 
 BotContext::BotContext (std::unordered_set<unsigned> indices_,
     std::unique_ptr<Bot> bot_,
+    Message controllableTeamInfo_,
     Message fieldInfo_,
     Message matchConfiguration_,
     BotManagerImpl &manager_) noexcept
     : indices (std::move (indices_)),
       m_manager (manager_),
       m_bot (std::move (bot_)),
+      m_intialized (m_intializedPromise.get_future ()),
+      m_controllableTeamInfoMessage (std::move (controllableTeamInfo_)),
       m_fieldInfoMessage (std::move (fieldInfo_)),
       m_matchConfigurationMessage (std::move (matchConfiguration_))
 {
-	// decode field info and match settings
+	// decode controllable team info and field info and match settings
+	m_controllableTeamInfo =
+	    m_controllableTeamInfoMessage.flatbuffer<rlbot::flat::ControllableTeamInfo> ();
 	m_fieldInfo = m_fieldInfoMessage.flatbuffer<rlbot::flat::FieldInfo> ();
 	m_matchConfiguration =
 	    m_matchConfigurationMessage.flatbuffer<rlbot::flat::MatchConfiguration> ();
 
-	assert (m_fieldInfo && m_matchConfiguration);
+	assert (m_controllableTeamInfo && m_fieldInfo && m_matchConfiguration);
 
 	// preallocate matchComms
 	m_matchCommsIn.reserve (128);
@@ -42,6 +47,17 @@ BotContext::BotContext (std::unordered_set<unsigned> indices_,
 
 	// preallocate player input
 	m_input.controller_state = std::make_unique<rlbot::flat::ControllerState> ();
+}
+
+void BotContext::initialize () noexcept
+{
+	m_bot->initialize (m_controllableTeamInfo, m_fieldInfo, m_matchConfiguration);
+	m_intializedPromise.set_value ();
+}
+
+void rlbot::detail::BotContext::waitInitialized () noexcept
+{
+	m_intialized.get ();
 }
 
 void rlbot::detail::BotContext::startService () noexcept
@@ -86,7 +102,7 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 	{
 		{
 			ZoneScopedNS ("bot update", 16);
-			m_bot->update (gamePacket, ballPrediction, m_fieldInfo, m_matchConfiguration);
+			m_bot->update (gamePacket, ballPrediction);
 		}
 
 		for (auto const &index : this->indices)
@@ -216,6 +232,8 @@ void BotContext::service () noexcept
 		tracy::SetThreadName (name);
 	}
 #endif
+
+	initialize ();
 
 	while (!m_quit.load (std::memory_order_relaxed))
 	{

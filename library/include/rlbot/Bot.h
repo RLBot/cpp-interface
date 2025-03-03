@@ -32,18 +32,23 @@ public:
 
 	Bot &operator= (Bot &&) noexcept = delete;
 
+	/// @brief Initialize bot
+	/// @param controllableTeamInfo_ Controllable team info
+	/// @param fieldInfo_ Field info
+	/// @param matchConfiguration Match configuration
+	/// @note The pointers are valid for the lifetime of the bot
+	virtual void initialize (rlbot::flat::ControllableTeamInfo const *controllableTeamInfo_,
+	    rlbot::flat::FieldInfo const *fieldInfo_,
+	    rlbot::flat::MatchConfiguration const *matchConfiguration_) noexcept;
+
 	/// @brief Get output from bot
 	/// The bot manager will call this function on every received GamePacket
 	/// @param gamePacket_ Game packet
 	/// @param ballPrediction_ Ball prediction (can be null)
-	/// @param fieldInfo_  Field info
-	/// @param matchConfiguration_  Match settings
 	/// @note The pointers are only valid for the duration of this call; make deep copies if
 	/// necessary!
 	virtual void update (rlbot::flat::GamePacket const *gamePacket_,
-	    rlbot::flat::BallPrediction const *ballPrediction_,
-	    rlbot::flat::FieldInfo const *fieldInfo_,
-	    rlbot::flat::MatchConfiguration const *matchConfiguration_) noexcept = 0;
+	    rlbot::flat::BallPrediction const *ballPrediction_) noexcept = 0;
 
 	/// @brief Get output from bot
 	/// The bot manager will call this function after update()
@@ -80,8 +85,6 @@ public:
 	unsigned const team;
 	/// @brief Bot name
 	std::string const name;
-	/// @brief Convenience storage for outputs
-	std::unordered_map<unsigned, rlbot::flat::ControllerState> outputs;
 
 protected:
 	/// @brief Parameterized constructor
@@ -89,6 +92,11 @@ protected:
 	/// @param team_ Team (0 = Blue, 1 = Orange)
 	/// @param name_ Bot name
 	Bot (std::unordered_set<unsigned> indices_, unsigned team_, std::string name_) noexcept;
+
+	/// @brief Set output
+	/// @param index_ Bot index
+	/// @param output_ Bot output
+	void setOutput (unsigned index_, rlbot::flat::ControllerState const &output_) noexcept;
 
 	/// @brief Send match comms
 	/// @param index_ Index into gamePacket->players () of message sender
@@ -123,5 +131,7 @@ private:
 	/// @brief Pending render messages
 	std::optional<std::unordered_map<int, std::vector<rlbot::flat::RenderMessageT>>>
 	    m_renderMessages;
+	/// @brief Convenience storage for outputs
+	std::unordered_map<unsigned, rlbot::flat::ControllerState> m_outputs;
 };
 }

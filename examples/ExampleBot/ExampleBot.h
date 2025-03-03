@@ -24,9 +24,7 @@ public:
 	ExampleBot &operator= (ExampleBot &&) noexcept = delete;
 
 	void update (rlbot::flat::GamePacket const *packet_,
-	    rlbot::flat::BallPrediction const *ballPrediction_,
-	    rlbot::flat::FieldInfo const *fieldInfo_,
-	    rlbot::flat::MatchConfiguration const *MatchConfiguration_) noexcept override;
+	    rlbot::flat::BallPrediction const *ballPrediction_) noexcept override;
 
 	void matchComm (rlbot::flat::MatchComm const *matchComm_) noexcept override;
 

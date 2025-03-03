@@ -59,9 +59,7 @@ ExampleBot::ExampleBot (std::unordered_set<unsigned> indices_,
 }
 
 void ExampleBot::update (rlbot::flat::GamePacket const *const packet_,
-    rlbot::flat::BallPrediction const *const ballPrediction_,
-    rlbot::flat::FieldInfo const *const fieldInfo_,
-    rlbot::flat::MatchConfiguration const *const matchConfiguration_) noexcept
+    rlbot::flat::BallPrediction const *const ballPrediction_) noexcept
 {
 	auto const now = std::chrono::steady_clock::now ();
 
@@ -142,7 +140,7 @@ void ExampleBot::update (rlbot::flat::GamePacket const *const packet_,
 		auto const steer     = angleSteer (angle - carRot.yaw ());
 		auto const handbrake = std::abs (steer) >= 1.0f;
 
-		outputs[index] = {1.0f, steer, 0.0f, 0.0f, 0.0f, false, false, handbrake, false};
+		setOutput (index, {1.0f, steer, 0.0f, 0.0f, 0.0f, false, false, handbrake, false});
 	}
 }
 

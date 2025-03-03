@@ -480,8 +480,12 @@ void BotManagerImpl::spawnBots () noexcept
 
 		auto loadout = bot->getLoadout (index);
 
-		m_bots.emplace_back (
-		    std::move (botIndices), std::move (bot), m_fieldInfo, m_matchConfiguration, *this);
+		m_bots.emplace_back (std::move (botIndices),
+		    std::move (bot),
+		    m_controllableTeamInfo,
+		    m_fieldInfo,
+		    m_matchConfiguration,
+		    *this);
 
 		if (!loadout.has_value ())
 			continue;
@@ -512,13 +516,23 @@ void BotManagerImpl::spawnBots () noexcept
 			enqueueMessage (loadoutMessage);
 		}
 
-		m_bots.emplace_back (
-		    std::move (botIndices), std::move (bot), m_fieldInfo, m_matchConfiguration, *this);
+		m_bots.emplace_back (std::move (botIndices),
+		    std::move (bot),
+		    m_controllableTeamInfo,
+		    m_fieldInfo,
+		    m_matchConfiguration,
+		    *this);
 	}
 
 	// handle the first bot on the reader thread
 	for (auto &bot : m_bots | std::views::drop (1))
 		bot.startService ();
+
+	if (!m_bots.empty ())
+		std::begin (m_bots)->initialize ();
+
+	for (auto &bot : m_bots)
+		bot.waitInitialized ();
 
 	enqueueMessage (MessageType::InitComplete, {});
 }

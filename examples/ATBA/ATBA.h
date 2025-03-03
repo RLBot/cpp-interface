@@ -25,7 +25,5 @@ public:
 	ATBA &operator= (ATBA &&) noexcept = delete;
 
 	void update (rlbot::flat::GamePacket const *packet_,
-	    rlbot::flat::BallPrediction const *ballPrediction_,
-	    rlbot::flat::FieldInfo const *fieldInfo_,
-	    rlbot::flat::MatchConfiguration const *matchConfiguration_) noexcept override;
+	    rlbot::flat::BallPrediction const *ballPrediction_) noexcept override;
 };

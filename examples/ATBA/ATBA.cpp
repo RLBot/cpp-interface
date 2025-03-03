@@ -22,22 +22,23 @@ ATBA::ATBA (std::unordered_set<unsigned> indices_, unsigned const team_, std::st
 }
 
 void ATBA::update (rlbot::flat::GamePacket const *const packet_,
-    rlbot::flat::BallPrediction const *const ballPrediction_,
-    rlbot::flat::FieldInfo const *const fieldInfo_,
-    rlbot::flat::MatchConfiguration const *const matchConfiguration_) noexcept
+    rlbot::flat::BallPrediction const *const ballPrediction_) noexcept
 {
 	for (auto const &index : this->indices)
 	{
-		auto &controller = outputs[index];
-		controller       = {};
-
 		// If there's no ball, there's nothing to chase; don't do anything
 		if (packet_->balls ()->size () == 0)
+		{
+			setOutput (index, {});
 			continue;
+		}
 
 		// We're not in the game packet; skip this tick
 		if (packet_->players ()->size () <= index)
+		{
+			setOutput (index, {});
 			continue;
+		}
 
 		auto const target = packet_->balls ()->Get (0)->physics ();
 		auto const car    = packet_->players ()->Get (index)->physics ();
@@ -54,6 +55,6 @@ void ATBA::update (rlbot::flat::GamePacket const *const packet_,
 		auto const throttle = 1.0f;
 		auto const steer    = std::copysign (1.0f, botFrontToTargetAngle);
 
-		controller = {throttle, steer, 0.0f, 0.0f, 0.0f, false, false, false, false};
+		setOutput (index, {throttle, steer, 0.0f, 0.0f, 0.0f, false, false, false, false});
 	};
 }
