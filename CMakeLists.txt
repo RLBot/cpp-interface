@@ -12,13 +12,13 @@ include(FetchContent)
 
 FetchContent_Declare(flatbuffers
 	GIT_REPOSITORY https://github.com/google/flatbuffers.git
-	GIT_TAG v24.12.23
+	GIT_TAG v25.2.10
 )
 FetchContent_Populate(flatbuffers)
 
 FetchContent_Declare(flatbuffers_schema
 	GIT_REPOSITORY https://github.com/RLBot/flatbuffers-schema.git
-	GIT_TAG ac7c8cf38b9d6981d37a5d02afdd44d9ecd43a25
+	GIT_TAG 45edf765638cd54de9c5631ecbf0a906088430e9
 )
 FetchContent_Populate(flatbuffers_schema)
 
