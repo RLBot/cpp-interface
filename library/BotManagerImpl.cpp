@@ -745,6 +745,7 @@ void BotManagerImpl::handleRead (std::size_t const count_) noexcept
 	// move end pointer
 	m_inEndOffset += static_cast<unsigned> (count_);
 
+	bool partial = false;
 	assert (m_inEndOffset >= m_inStartOffset);
 	while (m_inEndOffset - m_inStartOffset >= 4) [[likely]] // need to read complete header
 	{
@@ -771,12 +772,47 @@ void BotManagerImpl::handleRead (std::size_t const count_) noexcept
 			}
 
 			// partial message
+			partial = true;
 			break;
 		}
 
-		handleMessage (std::move (message));
+		auto const type = message.type ();
+		if (type == MessageType::BallPrediction || type == MessageType::GamePacket)
+		{
+			std::erase_if (
+			    m_inputQueue, [type] (auto const &message_) { return message_.type () == type; });
+		}
+
+		m_inputQueue.emplace_back (std::move (message));
 
 		m_inStartOffset += size;
+	}
+
+	if (!partial)
+	{
+		// process all messages
+		for (auto &message : m_inputQueue)
+			handleMessage (std::move (message));
+		m_inputQueue.clear ();
+	}
+	else
+	{
+		// process messages until first ball pred or game packet
+		auto it = std::begin (m_inputQueue);
+		while (it != std::end (m_inputQueue))
+		{
+			auto const &message = *it;
+			if (message.type () == MessageType::BallPrediction ||
+			    message.type () == MessageType::GamePacket)
+			{
+				break;
+			}
+
+			handleMessage (std::move (message));
+			++it;
+		}
+
+		m_inputQueue.erase (std::begin (m_inputQueue), it);
 	}
 
 	if (m_inStartOffset == m_inEndOffset) [[likely]]

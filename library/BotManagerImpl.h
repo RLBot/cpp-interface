@@ -213,6 +213,8 @@ private:
 	/// @brief Output begin pointer
 	std::size_t m_outStartOffset = 0;
 
+	/// @brief Input queue
+	std::vector<Message> m_inputQueue;
 	/// @brief Output queue
 	std::vector<Message> m_outputQueue;
 
