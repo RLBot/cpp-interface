@@ -32,7 +32,7 @@ Pool<T>::Ref::Ref (Ref &&that_) noexcept
 }
 
 template <typename T>
-Pool<T>::Ref &Pool<T>::Ref::operator= (Ref const &that_) noexcept
+typename Pool<T>::Ref &Pool<T>::Ref::operator= (Ref const &that_) noexcept
 {
 	if (this != &that_) [[likely]]
 	{
@@ -50,7 +50,7 @@ Pool<T>::Ref &Pool<T>::Ref::operator= (Ref const &that_) noexcept
 }
 
 template <typename T>
-Pool<T>::Ref &Pool<T>::Ref::operator= (Ref &&that_) noexcept
+typename Pool<T>::Ref &Pool<T>::Ref::operator= (Ref &&that_) noexcept
 {
 	if (this != &that_) [[likely]]
 	{
