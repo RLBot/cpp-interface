@@ -1019,8 +1019,15 @@ void BotManagerImpl::serviceThread () noexcept
 			}
 		}
 #else
-		io_uring_cqe *cqe;
-		auto const rc = io_uring_wait_cqe (&m_ring, &cqe);
+		auto const [rc, cqe] = [this] {
+			io_uring_cqe *cqe;
+			if (io_uring_peek_cqe (&m_ring, &cqe) == 0)
+				return std::make_pair (0, cqe);
+
+			auto const rc = io_uring_wait_cqe (&m_ring, &cqe);
+			return std::make_pair (rc, cqe);
+		}();
+
 		if (rc == -EINTR)
 			continue;
 		else if (rc < 0)
