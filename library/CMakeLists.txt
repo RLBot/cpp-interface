@@ -57,7 +57,7 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 	add_dependencies(${TARGET} rlbot-generated)
 	target_include_directories(${TARGET} SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/..)
 
-	if(LINUX)
+	if(LINUX OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		target_include_directories(${TARGET} SYSTEM PRIVATE ${liburing_SOURCE_DIR}/src/include)
 		target_link_libraries(${TARGET} PRIVATE ${liburing_SOURCE_DIR}/src/liburing.a)
 	endif()
@@ -66,6 +66,9 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 		target_link_libraries(${TARGET} PRIVATE wsock32 ws2_32)
 		target_compile_definitions(${TARGET}
 			PRIVATE
+				NOMINMAX
+				WIN32_LEAN_AND_MEAN
+				_CRT_SECURE_NO_DEPRECATE
 				_CRT_SECURE_NO_WARNINGS
 				_WIN32_WINNT=_WIN32_WINNT_WINBLUE
 		)
@@ -74,11 +77,7 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 	if(MSVC)
 		# standard definitions to enable
 		target_compile_definitions(${TARGET} PRIVATE
-			NOMINMAX                 # no min/max macros
-			_CRT_SECURE_NO_DEPRECATE # don't deprecate functions in favor of _s versions
-			WIN32_LEAN_AND_MEAN      # minimal headers
 		)
-
 		# standard compile options
 		target_compile_options(${TARGET} PRIVATE
 			/utf-8           # utf-8
@@ -90,12 +89,12 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 			/Zc:preprocessor # use c preprocessor
 		)
 	else()
-		if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+		if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 			# work around gcc _Pragma problem
 			target_compile_options(${TARGET} PRIVATE
 				-no-integrated-cpp
 			)
-		elseif(("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang") AND ("${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "GNU"))
+		elseif((CMAKE_CXX_COMPILER_ID STREQUAL "Clang") AND (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "GNU"))
 			# make clang a little more like gcc's set of warnings
 			target_compile_options(${TARGET} PRIVATE
 				-Wno-unused-const-variable

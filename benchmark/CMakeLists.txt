@@ -42,19 +42,15 @@ if(WIN32)
 	target_link_libraries(${PROJECT_NAME} PRIVATE wsock32 ws2_32)
 	target_compile_definitions(${PROJECT_NAME}
 		PRIVATE
+			NOMINMAX
+			WIN32_LEAN_AND_MEAN
+			_CRT_SECURE_NO_DEPRECATE
 			_CRT_SECURE_NO_WARNINGS
 			_WIN32_WINNT=_WIN32_WINNT_WINBLUE
 	)
 endif()
 
 if(MSVC)
-	# standard definitions to enable
-	target_compile_definitions(${PROJECT_NAME} PRIVATE
-		NOMINMAX                 # no min/max macros
-		_CRT_SECURE_NO_DEPRECATE # don't deprecate functions in favor of _s versions
-		WIN32_LEAN_AND_MEAN      # minimal headers
-	)
-
 	# standard compile options
 	target_compile_options(${PROJECT_NAME} PRIVATE
 		/utf-8           # utf-8
@@ -112,4 +108,3 @@ if(LTO_SUPPORTED)
 		INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
 	)
 endif()
-
