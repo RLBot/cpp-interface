@@ -31,9 +31,10 @@ int main (int argc_, char *argv_[])
 	auto const host = argv_[1];
 	auto const port = argv_[2];
 
-	/// map names at https://github.com/VirxEC/python-interface/blob/master/rlbot/utils/maps.py
+	/// map names at https://github.com/RLBot/python-interface/blob/master/rlbot/utils/maps.py
 	rlbot::flat::MatchConfigurationT ms{};
-	ms.auto_start_bots         = true;
+	ms.auto_start_agents       = true;
+	ms.wait_for_agents         = true;
 	ms.game_map_upk            = "Stadium_P";
 	ms.game_mode               = rlbot::flat::GameMode::Soccer;
 	ms.skip_replays            = true;
@@ -41,6 +42,8 @@ int main (int argc_, char *argv_[])
 	ms.existing_match_behavior = rlbot::flat::ExistingMatchBehavior::Restart;
 	ms.enable_rendering        = true;
 	ms.enable_state_setting    = true;
+	ms.auto_save_replay        = false;
+	ms.freeplay                = false;
 
 	for (unsigned i = 0; i < 4; ++i)
 	{

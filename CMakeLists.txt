@@ -48,7 +48,7 @@ execute_process(COMMAND
 
 FetchContent_Declare(flatbuffers_schema
 	GIT_REPOSITORY https://github.com/RLBot/flatbuffers-schema.git
-	GIT_TAG 45edf765638cd54de9c5631ecbf0a906088430e9
+	GIT_TAG 805c3cb5f0cd8aa13b940d98f9af59914aab0012
 )
 FetchContent_Populate(flatbuffers_schema)
 
@@ -64,7 +64,7 @@ if(LINUX OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
 	FetchContent_Declare(liburing
 		GIT_REPOSITORY https://github.com/axboe/liburing.git
-		GIT_TAG liburing-2.7
+		GIT_TAG liburing-2.9
 	)
 	FetchContent_Populate(liburing)
 
