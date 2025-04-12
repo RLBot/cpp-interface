@@ -8,6 +8,9 @@ option(RLBOT_CPP_ENABLE_TRACY "Enable tracy profiler" OFF)
 include(CheckIPOSupported)
 check_ipo_supported(RESULT LTO_SUPPORTED)
 
+include(ProcessorCount)
+ProcessorCount(NPROC)
+
 include(FetchContent)
 
 FetchContent_Declare(flatbuffers
@@ -44,6 +47,7 @@ execute_process(COMMAND
 	${CMAKE_COMMAND}
 		--build ${flatbuffers_BINARY_DIR}
 		--target flatc
+		--parallel ${NPROC}
 )
 
 FetchContent_Declare(flatbuffers_schema
@@ -59,9 +63,6 @@ FetchContent_Declare(tracy
 FetchContent_Populate(tracy)
 
 if(LINUX OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-	include(ProcessorCount)
-	ProcessorCount(NPROC)
-
 	FetchContent_Declare(liburing
 		GIT_REPOSITORY https://github.com/axboe/liburing.git
 		GIT_TAG liburing-2.9
@@ -79,7 +80,12 @@ if(LINUX OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	)
 endif()
 
-find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH PATHS ${flatbuffers_BINARY_DIR})
+list(APPEND FLATC_BUILD_DIRS ${flatbuffers_BINARY_DIR})
+foreach(BUILD_CONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
+	list(APPEND FLATC_BUILD_DIRS ${flatbuffers_BINARY_DIR}/${BUILD_CONFIG})
+endforeach()
+
+find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH PATHS ${FLATC_BUILD_DIRS})
 
 add_custom_command(
 	OUTPUT
