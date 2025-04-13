@@ -23,6 +23,9 @@ execute_process(COMMAND
 	${CMAKE_COMMAND}
 		-B ${flatbuffers_BINARY_DIR}
 		-S ${flatbuffers_SOURCE_DIR}
+		-G ${CMAKE_GENERATOR}
+		-DCMAKE_BUILD_TYPE=Release
+		-DCMAKE_CONFIGURATION_TYPES=Release
 		-DFLATBUFFERS_CODE_COVERAGE=OFF
 		-DFLATBUFFERS_BUILD_TESTS=OFF
 		-DFLATBUFFERS_INSTALL=OFF
@@ -48,6 +51,7 @@ execute_process(COMMAND
 		--build ${flatbuffers_BINARY_DIR}
 		--target flatc
 		--parallel ${NPROC}
+		--config Release
 )
 
 FetchContent_Declare(flatbuffers_schema
@@ -80,12 +84,11 @@ if(LINUX OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	)
 endif()
 
-list(APPEND FLATC_BUILD_DIRS ${flatbuffers_BINARY_DIR})
-foreach(BUILD_CONFIG IN LISTS CMAKE_CONFIGURATION_TYPES)
-	list(APPEND FLATC_BUILD_DIRS ${flatbuffers_BINARY_DIR}/${BUILD_CONFIG})
-endforeach()
-
-find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH PATHS ${FLATC_BUILD_DIRS})
+find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH
+	PATHS
+		${flatbuffers_BINARY_DIR}
+		${flatbuffers_BINARY_DIR}/Release
+)
 
 add_custom_command(
 	OUTPUT
