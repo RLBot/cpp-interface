@@ -49,10 +49,11 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 
 	target_include_directories(${TARGET} PUBLIC include)
 
-	target_include_directories(${TARGET} SYSTEM PUBLIC
-		${flatbuffers_SOURCE_DIR}/include
-		${tracy_SOURCE_DIR}/public
-	)
+	target_include_directories(${TARGET} SYSTEM PUBLIC ${flatbuffers_SOURCE_DIR}/include)
+
+	if(RLBOT_CPP_ENABLE_TRACY)
+		target_include_directories(${TARGET} SYSTEM PUBLIC ${tracy_SOURCE_DIR}/public)
+	endif()
 
 	add_dependencies(${TARGET} rlbot-generated)
 	target_include_directories(${TARGET} SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/..)

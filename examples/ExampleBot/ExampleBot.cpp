@@ -1,7 +1,5 @@
 #include "ExampleBot.h"
 
-#include <tracy/Tracy.hpp>
-
 #include <algorithm>
 #include <cmath>
 #include <concepts>

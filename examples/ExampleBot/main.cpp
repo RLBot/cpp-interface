@@ -2,7 +2,9 @@
 
 #include <rlbot/BotManager.h>
 
+#ifdef TRACY_ENABLE
 #include <tracy/Tracy.hpp>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -23,7 +25,9 @@ void (&alignedFree) (void *)                     = std::free;
 
 int main (int argc_, char *argv_[])
 {
+#ifdef TRACY_ENABLE
 	TracyNoop;
+#endif
 
 	auto const agentId = std::getenv ("RLBOT_AGENT_ID");
 	if (!agentId || std::strlen (agentId) == 0)

@@ -5,8 +5,6 @@
 #include "Message.h"
 #include "Pool.h"
 
-#include <tracy/Tracy.hpp>
-
 #include <atomic>
 #include <condition_variable>
 #include <future>

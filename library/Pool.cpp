@@ -1,8 +1,7 @@
 #include "Pool.h"
 
 #include "Log.h"
-
-#include <tracy/Tracy.hpp>
+#include "TracyHelper.h"
 
 #include <algorithm>
 #include <cassert>

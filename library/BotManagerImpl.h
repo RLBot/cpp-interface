@@ -14,8 +14,6 @@
 
 #include <rlbot_generated.h>
 
-#include <tracy/Tracy.hpp>
-
 #include <atomic>
 #include <condition_variable>
 #include <deque>

@@ -1,9 +1,9 @@
 #include "BotManagerImpl.h"
 
 #include "Log.h"
+#include "TracyHelper.h"
 
 #include <cstdint>
-#include <tracy/Tracy.hpp>
 
 #ifdef _WIN32
 #include <WS2tcpip.h>

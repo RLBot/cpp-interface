@@ -2,6 +2,8 @@
 
 #include "BotManagerImpl.h"
 #include "Log.h"
+#include "TracyHelper.h"
+
 #include <chrono>
 
 using namespace rlbot::detail;
