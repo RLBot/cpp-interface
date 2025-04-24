@@ -421,10 +421,6 @@ void BotManagerImpl::spawnBots () noexcept
 
 	clearBots ();
 
-	auto const agentId = std::getenv ("RLBOT_AGENT_ID");
-	if (!agentId || std::strlen (agentId) == 0)
-		return;
-
 	auto const controllableTeamInfo =
 	    m_controllableTeamInfo.flatbuffer<rlbot::flat::ControllableTeamInfo> (true);
 	auto const fieldInfo = m_fieldInfo.flatbuffer<rlbot::flat::FieldInfo> (true);

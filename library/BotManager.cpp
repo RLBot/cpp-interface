@@ -37,14 +37,17 @@ BotManagerBase::BotManagerBase (bool const batchHivemind_,
 
 bool BotManagerBase::run (char const *const host_,
     char const *const port_,
-    char const *const agentId_,
+    char const *agentId_,
     bool const ballPrediction_) noexcept
 {
-	auto const agentId = std::getenv ("RLBOT_AGENT_ID");
-	if (!agentId || std::strlen (agentId) == 0)
+	if (!agentId_)
 	{
-		error ("No agent id provided\n");
-		return false;
+		agentId_ = std::getenv ("RLBOT_AGENT_ID");
+		if (!agentId_ || std::strlen (agentId_) == 0)
+		{
+			error ("No agent id provided\n");
+			return false;
+		}
 	}
 
 	if (!m_impl->run (host_, port_))
