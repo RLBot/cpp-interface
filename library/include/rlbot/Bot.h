@@ -2,7 +2,7 @@
 
 #include <rlbot/RLBotCPP.h>
 
-#include <rlbot_generated.h>
+#include <interfacepacket_generated.h>
 
 #include <cstdint>
 #include <deque>

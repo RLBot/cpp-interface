@@ -25,7 +25,7 @@ int (&closesocket) (int) = ::close;
 
 namespace
 {
-constexpr auto NUM_TICKS = 60 * 60 * 120;
+constexpr auto NUM_TICKS = 60 * 120;
 
 SOCKET waitForConnection () noexcept
 {
@@ -213,7 +213,7 @@ Simulator::Simulator (Private) noexcept
 {
 	m_ballPrediction.slices.resize (6 * 120);
 
-	constexpr auto NUM_CARS = 2;
+	constexpr auto NUM_CARS = 1;
 	for (unsigned i = 0; i < NUM_CARS; ++i)
 	{
 		auto &player =
@@ -327,7 +327,7 @@ bool Simulator::run () noexcept
 
 		// std::this_thread::sleep_for is really really unreliable on windows
 		auto const deadline = now + std::chrono::microseconds (us);
-		// std::this_thread::sleep_until (deadline);
+		std::this_thread::sleep_until (deadline);
 		now = deadline;
 
 		m_arena->Step ();

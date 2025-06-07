@@ -32,7 +32,7 @@ int main (int argc_, char *argv_[])
 	}
 
 	rlbot::BotManager<ATBA> manager{true};
-	if (!manager.run (host, port, agentId, true))
+	if (!manager.connect (host, port, agentId, true))
 	{
 		std::fprintf (stderr, "Usage: %s [addr] [port]\n", argv_[0]);
 		return EXIT_FAILURE;

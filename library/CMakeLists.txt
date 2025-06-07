@@ -9,14 +9,14 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 	target_sources(${TARGET} PRIVATE
 		include/rlbot/Bot.h
 		include/rlbot/BotManager.h
+		include/rlbot/Connection.h
 		include/rlbot/RLBotCPP.h
 
 		Bot.cpp
 		BotContext.cpp
 		BotContext.h
 		BotManager.cpp
-		BotManagerImpl.cpp
-		BotManagerImpl.h
+		Connection.cpp
 		Log.cpp
 		Log.h
 		Message.cpp

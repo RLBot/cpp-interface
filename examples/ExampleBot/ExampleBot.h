@@ -23,6 +23,10 @@ public:
 
 	ExampleBot &operator= (ExampleBot &&) noexcept = delete;
 
+	void initialize (rlbot::flat::ControllableTeamInfo const *controllableTeamInfo_,
+	    rlbot::flat::FieldInfo const *fieldInfo_,
+	    rlbot::flat::MatchConfiguration const *matchConfiguration_) noexcept override;
+
 	void update (rlbot::flat::GamePacket const *packet_,
 	    rlbot::flat::BallPrediction const *ballPrediction_) noexcept override;
 

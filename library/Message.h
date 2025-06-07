@@ -2,7 +2,8 @@
 
 #include "Pool.h"
 
-#include <rlbot_generated.h>
+#include <corepacket_generated.h>
+#include <interfacepacket_generated.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -10,31 +11,12 @@
 
 namespace rlbot::detail
 {
-/// @brief Message type
-enum class MessageType
-{
-	None,
-	GamePacket,
-	FieldInfo,
-	StartCommand,
-	MatchConfiguration,
-	PlayerInput,
-	DesiredGameState,
-	RenderGroup,
-	RemoveRenderGroup,
-	MatchComm,
-	BallPrediction,
-	ConnectionSettings,
-	StopCommand,
-	SetLoadout,
-	InitComplete,
-	ControllableTeamInfo,
-};
-
 /// @brief message
 class Message
 {
 public:
+	static constexpr std::size_t HEADER_SIZE = 2; ///< Size of message header
+
 	~Message () noexcept;
 
 	Message () noexcept;
@@ -56,9 +38,6 @@ public:
 	/// Determines whether this message points into a valid buffer
 	explicit operator bool () const noexcept;
 
-	/// @brief Get message type
-	MessageType type () const noexcept;
-
 	/// @brief Get message size (excluding header)
 	unsigned size () const noexcept;
 
@@ -69,11 +48,14 @@ public:
 	std::span<std::uint8_t const> span () const noexcept;
 
 	/// @brief Get flatbuffer which points into this message
-	/// @tparam T Flatbuffer type
 	/// @param verify_ Whether to verify contents
 	/// @note Returns nullptr for invalid message
-	template <typename T>
-	T const *flatbuffer (bool verify_ = false) const noexcept;
+	rlbot::flat::InterfacePacket const *interfacePacket (bool verify_ = false) const noexcept;
+
+	/// @brief Get flatbuffer which points into this message
+	/// @param verify_ Whether to verify contents
+	/// @note Returns nullptr for invalid message
+	rlbot::flat::CorePacket const *corePacket (bool verify_ = false) const noexcept;
 
 	/// @brief Get buffer reference
 	Pool<Buffer>::Ref buffer () const noexcept;
@@ -88,25 +70,4 @@ private:
 	/// @brief Offset into buffer where message header starts
 	std::size_t m_offset = 0;
 };
-
-extern template rlbot::flat::GamePacket const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::FieldInfo const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::StartCommand const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::MatchConfiguration const *Message::flatbuffer (
-    bool verify_) const noexcept;
-extern template rlbot::flat::PlayerInput const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::DesiredGameState const *Message::flatbuffer (
-    bool verify_) const noexcept;
-extern template rlbot::flat::RenderGroup const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::RemoveRenderGroup const *Message::flatbuffer (
-    bool verify_) const noexcept;
-extern template rlbot::flat::MatchComm const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::BallPrediction const *Message::flatbuffer (
-    bool verify_) const noexcept;
-extern template rlbot::flat::ConnectionSettings const *Message::flatbuffer (
-    bool verify_) const noexcept;
-extern template rlbot::flat::StopCommand const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::SetLoadout const *Message::flatbuffer (bool verify_) const noexcept;
-extern template rlbot::flat::ControllableTeamInfo const *Message::flatbuffer (
-    bool verify_) const noexcept;
 }

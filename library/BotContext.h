@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rlbot/Bot.h>
+#include <rlbot/Connection.h>
 
 #include "Message.h"
 #include "Pool.h"
@@ -16,8 +17,6 @@
 
 namespace rlbot::detail
 {
-class BotManagerImpl;
-
 /// @brief Bot context
 class BotContext
 {
@@ -30,13 +29,13 @@ public:
 	/// @param controllableTeamInfo_ Controllable team info
 	/// @param fieldInfo_ Field info
 	/// @param matchConfiguration_ Match settings
-	/// @param manager_ Bot manager
+	/// @param connection Connection to the RLBot server
 	explicit BotContext (std::unordered_set<unsigned> indices_,
 	    std::unique_ptr<Bot> bot_,
 	    Message controllableTeamInfo_,
 	    Message fieldInfo_,
 	    Message matchConfiguration_,
-	    BotManagerImpl &manager_) noexcept;
+	    Connection &connection_) noexcept;
 
 	/// @brief Initialize bot
 	void initialize () noexcept;
@@ -79,8 +78,8 @@ private:
 	/// @brief Bot service thread
 	void service () noexcept;
 
-	/// @brief Bot manager
-	BotManagerImpl &m_manager;
+	/// @brief Connection to the RLBot server
+	Connection &m_connection;
 	/// @brief Bot thread
 	std::thread m_thread;
 	/// @brief Mutex
@@ -96,7 +95,7 @@ private:
 	std::future<void> m_intialized;
 
 	/// @brief Player input
-	rlbot::flat::PlayerInputT m_input{};
+	std::unique_ptr<rlbot::flat::ControllerState> m_input;
 
 	/// @brief Pending match comms
 	std::vector<Message> m_matchCommsIn;

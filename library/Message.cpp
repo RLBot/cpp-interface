@@ -9,6 +9,45 @@
 
 using namespace rlbot::detail;
 
+namespace
+{
+template <typename T>
+T const *decodeFlatbuffer (Pool<Buffer>::Ref const &buffer_,
+    std::size_t const offset_,
+    bool const verify_)
+{
+	if (!buffer_) [[unlikely]]
+		return nullptr;
+
+	assert (Message::HEADER_SIZE <= buffer_->size ());
+	assert (offset_ <= buffer_->size () - Message::HEADER_SIZE);
+
+	auto const size = static_cast<unsigned> (buffer_->operator[] (offset_ + 0) << CHAR_BIT) |
+	                  buffer_->operator[] (offset_ + 1);
+
+	assert (size <= buffer_->size () - Message::HEADER_SIZE);
+	assert (offset_ <= buffer_->size () - Message::HEADER_SIZE - size);
+
+	auto const payload =
+	    std::span<std::uint8_t const>{&buffer_->operator[] (offset_ + Message::HEADER_SIZE), size};
+
+	auto const root = flatbuffers::GetRoot<T> (payload.data ());
+	if (verify_)
+	{
+		auto verifier = flatbuffers::Verifier (
+		    payload.data (), payload.size (), flatbuffers::Verifier::Options{});
+
+		if (!root->Verify (verifier)) [[unlikely]]
+		{
+			warning ("Invalid flatbuffer\n");
+			return nullptr;
+		}
+	}
+
+	return root;
+}
+}
+
 ///////////////////////////////////////////////////////////////////////////
 Message::~Message () noexcept = default;
 
@@ -32,28 +71,17 @@ Message::operator bool () const noexcept
 	return static_cast<bool> (m_buffer);
 }
 
-MessageType Message::type () const noexcept
-{
-	assert (m_buffer);
-	assert (m_offset <= m_buffer->size () - 2);
-	auto const type = static_cast<MessageType> (
-	    static_cast<unsigned> (m_buffer->operator[] (m_offset) << CHAR_BIT) |
-	    m_buffer->operator[] (m_offset + 1));
-
-	return type;
-}
-
 unsigned Message::size () const noexcept
 {
 	assert (m_buffer);
-	assert (m_offset <= m_buffer->size () - 4);
-	return static_cast<unsigned> (m_buffer->operator[] (m_offset + 2) << CHAR_BIT) |
-	       m_buffer->operator[] (m_offset + 3);
+	assert (m_offset + HEADER_SIZE <= m_buffer->size ());
+	return static_cast<unsigned> (m_buffer->operator[] (m_offset + 0) << CHAR_BIT) |
+	       m_buffer->operator[] (m_offset + 1);
 }
 
 unsigned Message::sizeWithHeader () const noexcept
 {
-	return size () + 4;
+	return size () + HEADER_SIZE;
 }
 
 std::span<std::uint8_t const> Message::span () const noexcept
@@ -62,32 +90,14 @@ std::span<std::uint8_t const> Message::span () const noexcept
 	return {&m_buffer->operator[] (m_offset), sizeWithHeader ()};
 }
 
-template <typename T>
-T const *Message::flatbuffer (bool const verify_) const noexcept
+rlbot::flat::InterfacePacket const *Message::interfacePacket (bool const verify_) const noexcept
 {
-	if (!m_buffer) [[unlikely]]
-		return nullptr;
+	return decodeFlatbuffer<rlbot::flat::InterfacePacket> (m_buffer, m_offset, verify_);
+}
 
-	assert (m_offset <= m_buffer->size () - 4);
-	assert (m_offset < m_buffer->size ());
-	assert (sizeWithHeader () < m_buffer->size ());
-	assert (m_offset < m_buffer->size () - sizeWithHeader ());
-
-	auto const root = flatbuffers::GetRoot<T> (&m_buffer->operator[] (m_offset + 4));
-	if (verify_)
-	{
-		auto const payload = span ().subspan (4);
-		auto verifier      = flatbuffers::Verifier (
-            payload.data (), payload.size (), flatbuffers::Verifier::Options{});
-
-		if (!root->Verify (verifier)) [[unlikely]]
-		{
-			warning ("Invalid flatbuffer\n");
-			return nullptr;
-		}
-	}
-
-	return root;
+rlbot::flat::CorePacket const *Message::corePacket (bool const verify_) const noexcept
+{
+	return decodeFlatbuffer<rlbot::flat::CorePacket> (m_buffer, m_offset, verify_);
 }
 
 Pool<Buffer>::Ref Message::buffer () const noexcept
@@ -99,18 +109,3 @@ void Message::reset () noexcept
 {
 	m_buffer.reset ();
 }
-
-template rlbot::flat::GamePacket const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::FieldInfo const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::StartCommand const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::MatchConfiguration const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::PlayerInput const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::DesiredGameState const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::RenderGroup const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::RemoveRenderGroup const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::MatchComm const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::BallPrediction const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::ConnectionSettings const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::StopCommand const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::SetLoadout const *Message::flatbuffer (bool verify_) const noexcept;
-template rlbot::flat::ControllableTeamInfo const *Message::flatbuffer (bool verify_) const noexcept;

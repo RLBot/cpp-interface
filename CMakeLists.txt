@@ -22,19 +22,19 @@ FetchContent_Populate(flatbuffers)
 
 FetchContent_Declare(flatbuffers_schema
 	GIT_REPOSITORY https://github.com/RLBot/flatbuffers-schema.git
-	GIT_TAG 805c3cb5f0cd8aa13b940d98f9af59914aab0012
+	GIT_TAG 35d50a56c27c65f96dc5ecea4037ef8728a6d560
 )
 FetchContent_Populate(flatbuffers_schema)
 
 if(RLBOT_CPP_ENABLE_TRACY)
 	FetchContent_Declare(tracy
 		GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-		GIT_TAG v0.11.1
+		GIT_TAG v0.12.0
 	)
 	FetchContent_Populate(tracy)
 endif()
 
-find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH PATHS ${flatbuffers_schema_SOURCE_DIR})
+find_program(FLATC flatc REQUIRED NO_DEFAULT_PATH PATHS ${flatbuffers_schema_SOURCE_DIR}/binaries)
 
 execute_process(COMMAND ${FLATC} --help OUTPUT_QUIET RESULTS_VARIABLE FLATC_RESULT)
 
@@ -103,19 +103,58 @@ endif()
 
 add_custom_command(
 	OUTPUT
-		${CMAKE_CURRENT_BINARY_DIR}/rlbot_generated.h
+		${CMAKE_CURRENT_BINARY_DIR}/misc_generated.h
 	COMMAND
-		${FLATC} --cpp --gen-object-api --gen-all --cpp-std c++17 ${flatbuffers_schema_SOURCE_DIR}/rlbot.fbs
+		${FLATC} --cpp --gen-object-api --gen-all --cpp-std c++17 ${flatbuffers_schema_SOURCE_DIR}/schema/misc.fbs
 	DEPENDS
-		${flatbuffers_schema_SOURCE_DIR}/comms.fbs
-		${flatbuffers_schema_SOURCE_DIR}/gamedata.fbs
-		${flatbuffers_schema_SOURCE_DIR}/gamestatemanip.fbs
-		${flatbuffers_schema_SOURCE_DIR}/matchconfig.fbs
-		${flatbuffers_schema_SOURCE_DIR}/rlbot.fbs
-		${flatbuffers_schema_SOURCE_DIR}/rendering.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/color.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/comms.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/gamedata.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/gamestatemanip.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/matchconfig.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/rendering.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/vector.fbs
 )
 
-add_custom_target(rlbot-generated DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/rlbot_generated.h)
+add_custom_command(
+	OUTPUT
+		${CMAKE_CURRENT_BINARY_DIR}/interfacepacket_generated.h
+	COMMAND
+		${FLATC} --cpp --gen-object-api --cpp-std c++17 ${flatbuffers_schema_SOURCE_DIR}/schema/interfacepacket.fbs
+	DEPENDS
+		${flatbuffers_schema_SOURCE_DIR}/schema/color.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/comms.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/gamedata.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/gamestatemanip.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/matchconfig.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/misc.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/rendering.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/vector.fbs
+)
+
+add_custom_command(
+	OUTPUT
+		${CMAKE_CURRENT_BINARY_DIR}/corepacket_generated.h
+	COMMAND
+		${FLATC} --cpp --gen-object-api --cpp-std c++17 ${flatbuffers_schema_SOURCE_DIR}/schema/corepacket.fbs
+	DEPENDS
+		${flatbuffers_schema_SOURCE_DIR}/schema/color.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/comms.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/gamedata.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/gamestatemanip.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/matchconfig.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/misc.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/rendering.fbs
+		${flatbuffers_schema_SOURCE_DIR}/schema/vector.fbs
+)
+
+
+add_custom_target(rlbot-generated
+	DEPENDS 
+		${CMAKE_CURRENT_BINARY_DIR}/corepacket_generated.h
+		${CMAKE_CURRENT_BINARY_DIR}/interfacepacket_generated.h
+		${CMAKE_CURRENT_BINARY_DIR}/misc_generated.h
+)
 
 add_subdirectory(library)
 

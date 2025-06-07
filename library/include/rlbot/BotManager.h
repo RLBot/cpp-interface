@@ -1,9 +1,9 @@
 #pragma once
 
 #include <rlbot/Bot.h>
-#include <rlbot/RLBotCPP.h>
 
-#include <rlbot_generated.h>
+#include <rlbot/Connection.h>
+#include <rlbot/RLBotCPP.h>
 
 #include <concepts>
 #include <memory>
@@ -19,41 +19,23 @@ class BotManagerImpl;
 
 /// @brief Bot manager base class
 /// This should only be derived by the BotManager template class below
-class RLBotCPP_API BotManagerBase
+class RLBotCPP_API BotManagerBase : public Connection
 {
 public:
 	/// @brief Destructor
 	/// Waits for service threads to finish, but doesn't request termination
-	/// You should call terminate() first if you don't want to wait for server-initiated shutdown
-	virtual ~BotManagerBase () noexcept;
+	/// You should call disconnect() first if you don't want to wait for server-initiated shutdown
+	~BotManagerBase () noexcept override;
 
-	/// @brief Run bot manager
+	/// @brief Connect to server
 	/// @param host_ RLBotServer address
-	/// @param port_ RLBotServer port
-	/// @param agentId_ Agent id for connection
-	/// @param ballPrediction_ Whether ball prediction is requested
-	/// @return Whether bot manager was successfully started
-	bool run (char const *host_,
-	    char const *port_,
+	/// @param service_ RLBotServer service (port)
+	/// @param agentId_ Agent ID (optional, defaults to RLBOT_AGENT_ID environment variable)
+	/// @param ballPrediction_ Whether to request ball prediction
+	bool connect (char const *const host_,
+	    char const *const service_,
 	    char const *agentId_,
-	    bool ballPrediction_) noexcept;
-
-	/// @brief Request bot manager to terminate
-	void terminate () noexcept;
-
-	/// @brief Start match
-	/// @param matchConfiguration_ Match settings
-	/// @note Uses this manager's agent to start a match
-	void startMatch (rlbot::flat::MatchConfigurationT const &matchConfiguration_) noexcept;
-
-	/// @brief Start match
-	/// @param host_ RLBotServer address
-	/// @param port_ RLBotServer port
-	/// @param matchConfiguration_ Match settings
-	/// @note Uses a temporary agent to start a match
-	static bool startMatch (char const *host_,
-	    char const *port_,
-	    rlbot::flat::MatchConfigurationT const &matchConfiguration_) noexcept;
+	    bool const ballPrediction_) noexcept;
 
 protected:
 	/// @brief Parameterized constructor
@@ -62,6 +44,10 @@ protected:
 	BotManagerBase (bool batchHivemind_,
 	    std::unique_ptr<Bot> (
 	        &spawn_) (std::unordered_set<unsigned>, unsigned, std::string) noexcept) noexcept;
+
+private:
+	/// @sa Connection::handleMessage
+	void handleMessage (detail::Message &message_) noexcept override;
 
 	/// @brief Bot manager implementation
 	std::unique_ptr<detail::BotManagerImpl> m_impl;

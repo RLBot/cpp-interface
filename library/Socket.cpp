@@ -14,6 +14,7 @@
 #include <cassert>
 #include <cstring>
 #include <memory>
+#include <string>
 
 bool rlbot::detail::resolve (char const *const host_,
     char const *const service_,

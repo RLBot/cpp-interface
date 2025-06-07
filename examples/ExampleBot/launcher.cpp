@@ -1,4 +1,4 @@
-#include <rlbot/BotManager.h>
+#include <rlbot/Connection.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -9,7 +9,11 @@
 #include <unistd.h>
 #endif
 
-#define USE_HIVEMIND true
+#include <chrono>
+#include <thread>
+using namespace std::chrono_literals;
+
+#define USE_HIVEMIND false
 
 int main (int argc_, char *argv_[])
 {
@@ -25,11 +29,20 @@ int main (int argc_, char *argv_[])
 	if (argc_ <= 2)
 	{
 		std::fprintf (stderr, "Usage: %s <addr> <port>\n", argv_[0]);
+		std::free (cwd);
 		return EXIT_FAILURE;
 	}
 
 	auto const host = argv_[1];
 	auto const port = argv_[2];
+
+	auto connection = rlbot::Connection{};
+	if (!connection.connect (host, port))
+	{
+		std::fprintf (stderr, "Failed to connect to [%s]:%s\n", host, port);
+		std::free (cwd);
+		return EXIT_FAILURE;
+	}
 
 	/// map names at https://github.com/RLBot/python-interface/blob/master/rlbot/utils/maps.py
 	rlbot::flat::MatchConfigurationT ms{};
@@ -40,32 +53,34 @@ int main (int argc_, char *argv_[])
 	ms.skip_replays            = true;
 	ms.instant_start           = true;
 	ms.existing_match_behavior = rlbot::flat::ExistingMatchBehavior::Restart;
-	ms.enable_rendering        = true;
+	ms.enable_rendering        = rlbot::flat::DebugRendering::OnByDefault;
 	ms.enable_state_setting    = true;
 	ms.auto_save_replay        = false;
 	ms.freeplay                = false;
 
-	for (unsigned i = 0; i < 4; ++i)
+	for (unsigned i = 0; i < 2; ++i)
 	{
-		auto player = std::make_unique<rlbot::flat::PlayerConfigurationT> ();
-		player->variety.Set (rlbot::flat::CustomBotT{});
-		player->team     = i % 2;
-		player->root_dir = cwd;
+		rlbot::flat::CustomBotT bot{};
+		bot.root_dir = cwd;
 #ifdef _WIN32
-		player->run_command = "ExampleBot.exe";
+		bot.run_command = "ExampleBot.exe";
 #else
-		player->run_command = "./ExampleBot";
+		bot.run_command = "./ExampleBot";
 #endif
-		player->name     = "ExampleBot";
-		player->agent_id = "RLBotCPP/ExampleBot";
-		player->hivemind = USE_HIVEMIND;
+		bot.name     = "ExampleBot";
+		bot.agent_id = "RLBotCPP/ExampleBot";
+		bot.hivemind = USE_HIVEMIND;
+
+		auto player = std::make_unique<rlbot::flat::PlayerConfigurationT> ();
+		player->variety.Set (std::move (bot));
+		player->team = 0;
 		ms.player_configurations.emplace_back (std::move (player));
 	}
 
-	std::free (cwd);
+	connection.sendMatchConfiguration (std::move (ms));
+	connection.sendDisconnectSignal ({});
 
-	if (!rlbot::BotManagerBase::startMatch (host, port, ms))
-		return EXIT_FAILURE;
+	std::free (cwd);
 
 	if constexpr (USE_HIVEMIND)
 		std::printf ("Please run two ExampleBot processes (one for each team)\n");

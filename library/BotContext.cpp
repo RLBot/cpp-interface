@@ -1,6 +1,5 @@
 #include "BotContext.h"
 
-#include "BotManagerImpl.h"
 #include "Log.h"
 #include "TracyHelper.h"
 
@@ -25,9 +24,9 @@ BotContext::BotContext (std::unordered_set<unsigned> indices_,
     Message controllableTeamInfo_,
     Message fieldInfo_,
     Message matchConfiguration_,
-    BotManagerImpl &manager_) noexcept
+    Connection &connection_) noexcept
     : indices (std::move (indices_)),
-      m_manager (manager_),
+      m_connection (connection_),
       m_bot (std::move (bot_)),
       m_intialized (m_intializedPromise.get_future ()),
       m_controllableTeamInfoMessage (std::move (controllableTeamInfo_)),
@@ -36,10 +35,10 @@ BotContext::BotContext (std::unordered_set<unsigned> indices_,
 {
 	// decode controllable team info and field info and match settings
 	m_controllableTeamInfo =
-	    m_controllableTeamInfoMessage.flatbuffer<rlbot::flat::ControllableTeamInfo> ();
-	m_fieldInfo = m_fieldInfoMessage.flatbuffer<rlbot::flat::FieldInfo> ();
+	    m_controllableTeamInfoMessage.corePacket ()->message_as_ControllableTeamInfo ();
+	m_fieldInfo = m_fieldInfoMessage.corePacket ()->message_as_FieldInfo ();
 	m_matchConfiguration =
-	    m_matchConfigurationMessage.flatbuffer<rlbot::flat::MatchConfiguration> ();
+	    m_matchConfigurationMessage.corePacket ()->message_as_MatchConfiguration ();
 
 	assert (m_controllableTeamInfo && m_fieldInfo && m_matchConfiguration);
 
@@ -48,7 +47,7 @@ BotContext::BotContext (std::unordered_set<unsigned> indices_,
 	m_matchCommsWork.reserve (128);
 
 	// preallocate player input
-	m_input.controller_state = std::make_unique<rlbot::flat::ControllerState> ();
+	m_input = std::make_unique<rlbot::flat::ControllerState> ();
 }
 
 void BotContext::initialize () noexcept
@@ -94,18 +93,27 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 
 	// process match comms first
 	for (auto const &matchComm : m_matchCommsWork)
-		m_bot->matchComm (matchComm.flatbuffer<rlbot::flat::MatchComm> ());
+		m_bot->matchComm (matchComm.corePacket ()->message_as_MatchComm ());
 	m_matchCommsWork.clear ();
 
 	// process game packet next
-	auto const gamePacket     = gamePacketMessage.flatbuffer<rlbot::flat::GamePacket> ();
-	auto const ballPrediction = ballPredictionMessage.flatbuffer<rlbot::flat::BallPrediction> ();
-	if (gamePacket)
+	if (gamePacketMessage)
 	{
+		auto const gamePacket = gamePacketMessage.corePacket ()->message_as_GamePacket ();
+		auto const ballPrediction =
+		    ballPredictionMessage
+		        ? ballPredictionMessage.corePacket ()->message_as_BallPrediction ()
+		        : nullptr;
 		{
 			ZoneScopedNS ("bot update", 16);
 			m_bot->update (gamePacket, ballPrediction);
 		}
+
+		rlbot::flat::InterfacePacketT interfacePacket;
+		interfacePacket.message.Set (rlbot::flat::PlayerInputT{});
+
+		auto const playerInput        = interfacePacket.message.AsPlayerInput ();
+		playerInput->controller_state = std::move (m_input);
 
 		for (auto const &index : this->indices)
 		{
@@ -113,28 +121,33 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 				continue;
 
 			ZoneScopedNS ("bot output", 16);
-			m_input.player_index      = index;
-			*m_input.controller_state = m_bot->getOutput (index);
-			m_manager.enqueueMessage (m_input);
+			playerInput->player_index      = index;
+			*playerInput->controller_state = m_bot->getOutput (index);
+			m_connection.sendInterfacePacket (interfacePacket);
 		}
+
+		m_input = std::move (playerInput->controller_state);
 	}
 
 	// collect output match comms
-	auto const matchCommsOut = m_bot->getMatchComms ();
+	auto matchCommsOut = m_bot->getMatchComms ();
 	if (matchCommsOut.has_value ())
 	{
-		for (auto const &matchComm : matchCommsOut.value ())
+		rlbot::flat::InterfacePacketT interfacePacket;
+		for (auto &matchComm : matchCommsOut.value ())
 		{
 			assert (indices.contains (matchComm.index));
 			assert (matchComm.team == m_bot->team);
 
-			m_manager.enqueueMessage (matchComm);
+			interfacePacket.message.Set (std::move (matchComm));
+			m_connection.sendInterfacePacket (interfacePacket);
 		}
 	}
 
 	// collect render messages
 	auto const renderMessages = m_bot->getRenderMessages ();
-	if (renderMessages.has_value () && m_matchConfiguration->enable_rendering ())
+	if (renderMessages.has_value () &&
+	    m_matchConfiguration->enable_rendering () != rlbot::flat::DebugRendering::AlwaysOff)
 	{
 		for (auto const &[group, renderMessages] : renderMessages.value ())
 		{
@@ -143,7 +156,7 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 				// empty group indicates remove
 				rlbot::flat::RemoveRenderGroupT removeRenderGroup;
 				removeRenderGroup.id = group;
-				m_manager.enqueueMessage (removeRenderGroup);
+				m_connection.sendRemoveRenderGroup (std::move (removeRenderGroup));
 			}
 			else
 			{
@@ -156,7 +169,7 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 					    std::make_unique<rlbot::flat::RenderMessageT> (std::move (message)));
 				}
 
-				m_manager.enqueueMessage (renderGroup);
+				m_connection.sendRenderGroup (std::move (renderGroup));
 			}
 		}
 	}
@@ -164,7 +177,7 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 	// collect desired game state
 	auto const gameState = m_bot->getDesiredGameState ();
 	if (gameState.has_value () && m_matchConfiguration->enable_state_setting ())
-		m_manager.enqueueMessage (gameState.value ());
+		m_connection.sendDesiredGameState (std::move (gameState.value ()));
 
 	lock_.lock ();
 	return true;
@@ -179,7 +192,8 @@ void BotContext::terminate () noexcept
 void BotContext::setGamePacket (Message gamePacket_, bool const notify_) noexcept
 {
 	ZoneScopedNS ("setGamePacket", 16);
-	assert (gamePacket_.type () == MessageType::GamePacket);
+	assert (gamePacket_.corePacket (true));
+	assert (gamePacket_.corePacket ()->message_type () == rlbot::flat::CoreMessage::GamePacket);
 
 	{
 		auto const lock     = std::scoped_lock (m_mutex);
@@ -193,7 +207,9 @@ void BotContext::setGamePacket (Message gamePacket_, bool const notify_) noexcep
 
 void BotContext::setBallPrediction (Message ballPrediction_) noexcept
 {
-	assert (ballPrediction_.type () == MessageType::BallPrediction);
+	assert (ballPrediction_.corePacket (true));
+	assert (
+	    ballPrediction_.corePacket ()->message_type () == rlbot::flat::CoreMessage::BallPrediction);
 
 	auto const lock         = std::scoped_lock (m_mutex);
 	m_ballPredictionMessage = std::move (ballPrediction_);
@@ -202,9 +218,10 @@ void BotContext::setBallPrediction (Message ballPrediction_) noexcept
 void rlbot::detail::BotContext::addMatchComm (Message matchComm_, bool const notify_) noexcept
 {
 	ZoneScopedNS ("addMatchComm", 16);
-	assert (matchComm_.type () == MessageType::MatchComm);
+	assert (matchComm_.corePacket (true));
+	assert (matchComm_.corePacket ()->message_type () == rlbot::flat::CoreMessage::MatchComm);
 
-	auto const comm = matchComm_.flatbuffer<rlbot::flat::MatchComm> ();
+	auto const comm = matchComm_.corePacket ()->message_as_MatchComm ();
 	assert (comm);
 
 	// don't handle message to self
@@ -230,7 +247,7 @@ void BotContext::service () noexcept
 #ifdef TRACY_ENABLE
 	{
 		char name[32];
-		std::sprintf (name, "Bot %d\n", index);
+		std::sprintf (name, "Bot %d\n", indices.empty () ? -1 : *std::begin (indices));
 		tracy::SetThreadName (name);
 	}
 #endif

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <numbers>
+#include <thread>
 #include <unordered_set>
 using namespace std::chrono_literals;
 
@@ -56,10 +57,24 @@ ExampleBot::ExampleBot (std::unordered_set<unsigned> indices_,
 		std::printf ("Team %u Index %u: Example Bot created\n", team_, index);
 }
 
+void ExampleBot::initialize (rlbot::flat::ControllableTeamInfo const *controllableTeamInfo_,
+    rlbot::flat::FieldInfo const *fieldInfo_,
+    rlbot::flat::MatchConfiguration const *matchConfiguration_) noexcept
+{
+	(void)controllableTeamInfo_;
+	(void)fieldInfo_;
+	(void)matchConfiguration_;
+
+	std::this_thread::sleep_for (1s);
+}
+
 void ExampleBot::update (rlbot::flat::GamePacket const *const packet_,
     rlbot::flat::BallPrediction const *const ballPrediction_) noexcept
 {
 	auto const now = std::chrono::steady_clock::now ();
+
+	// simulate a bot that can only keep up at 10Hz
+	// std::this_thread::sleep_for (100ms);
 
 	auto const prevComms    = m_comms;
 	auto const prevRendered = m_rendered;
