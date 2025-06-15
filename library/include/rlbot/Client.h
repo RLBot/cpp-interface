@@ -22,13 +22,13 @@ public:
 
 	Client () noexcept;
 
-	Client (Client const &) = delete;
+	Client (Client const &) noexcept = delete;
 
-	Client &operator= (Client const &) = delete;
+	Client &operator= (Client const &) noexcept = delete;
 
-	Client (Client &&) = default;
+	Client (Client &&) noexcept;
 
-	Client &operator= (Client &&) = default;
+	Client &operator= (Client &&) noexcept;
 
 	/// @brief Connect to server
 	/// @param host_ Host to connect to

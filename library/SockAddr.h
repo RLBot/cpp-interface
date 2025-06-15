@@ -2,6 +2,7 @@
 
 #ifdef _WIN32
 #include <WinSock2.h>
+#include <ws2ipdef.h>
 using socklen_t = int;
 #else
 #include <netinet/in.h>
@@ -10,6 +11,10 @@ using socklen_t = int;
 
 #include <compare>
 #include <cstdint>
+
+#ifdef _WIN32
+using in_addr_t = std::uint32_t;
+#endif
 
 namespace rlbot::detail
 {

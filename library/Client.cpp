@@ -204,7 +204,7 @@ void ClientImpl::requestRead () noexcept
 
 	{
 		ZoneScopedNS ("WSARecv", 16);
-		auto const rc = WSARecv (sock, &buffer, 1, nullptr, &flags, &inOverlapped, nullptr);
+		auto const rc = WSARecv (sock->fd (), &buffer, 1, nullptr, &flags, &inOverlapped, nullptr);
 		if (rc != 0 && WSAGetLastError () != WSA_IO_PENDING)
 		{
 			error ("WSARecv: %s\n", errorMessage (true));
@@ -313,7 +313,7 @@ void ClientImpl::requestWriteLocked (std::unique_lock<std::mutex> &lock_) noexce
 #ifdef _WIN32
 		ZoneScopedNS ("WSASend", 16);
 		auto const rc =
-		    WSASend (sock, iov.data (), iov.size (), nullptr, 0, &outOverlapped, nullptr);
+		    WSASend (sock->fd (), iov.data (), iov.size (), nullptr, 0, &outOverlapped, nullptr);
 		if (rc != 0 && WSAGetLastError () != WSA_IO_PENDING)
 		{
 			error ("WSASend: %s\n", errorMessage (true));
@@ -438,6 +438,10 @@ Client::Client () noexcept : m_impl (new ClientImpl{})
 {
 }
 
+Client::Client (Client &&) noexcept = default;
+
+Client &Client::operator= (Client &&) noexcept = default;
+
 bool Client::connect (char const *const host_, char const *const service_) noexcept
 {
 	if (m_impl->running.load (std::memory_order_relaxed))
@@ -470,7 +474,7 @@ bool Client::connect (char const *const host_, char const *const service_) noexc
 
 #ifdef _WIN32
 	m_impl->iocpHandle = CreateIoCompletionPort (
-	    reinterpret_cast<HANDLE> (m_impl->sock), nullptr, COMPLETION_KEY_SOCKET, 0);
+	    reinterpret_cast<HANDLE> (sock->fd ()), nullptr, COMPLETION_KEY_SOCKET, 0);
 	if (!m_impl->iocpHandle)
 		return false;
 #else

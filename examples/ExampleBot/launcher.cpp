@@ -10,13 +10,17 @@
 #endif
 
 #include <chrono>
+#include <cstdio>
 #include <thread>
 using namespace std::chrono_literals;
 
-#define USE_HIVEMIND false
+#define USE_HIVEMIND true
 
 int main (int argc_, char *argv_[])
 {
+	std::setvbuf (stdout, nullptr, _IONBF, 0);
+	std::setvbuf (stderr, nullptr, _IONBF, 0);
+
 	// MSVC and glibc support dynamically allocated cwd
 	// If you use a different libc this won't work!
 	auto const cwd = ::getcwd (nullptr, 0);
@@ -58,7 +62,7 @@ int main (int argc_, char *argv_[])
 	ms.auto_save_replay        = false;
 	ms.freeplay                = false;
 
-	for (unsigned i = 0; i < 2; ++i)
+	for (unsigned i = 0; i < 4; ++i)
 	{
 		rlbot::flat::CustomBotT bot{};
 		bot.root_dir = cwd;
@@ -73,7 +77,7 @@ int main (int argc_, char *argv_[])
 
 		auto player = std::make_unique<rlbot::flat::PlayerConfigurationT> ();
 		player->variety.Set (std::move (bot));
-		player->team = 0;
+		player->team = i % 2;
 		ms.player_configurations.emplace_back (std::move (player));
 	}
 

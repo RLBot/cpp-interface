@@ -21,7 +21,14 @@ using namespace rlbot::detail;
 
 namespace
 {
-in_addr inaddr_any = {.s_addr = htonl (INADDR_ANY)};
+in_addr fromAddr (in_addr_t const addr_) noexcept
+{
+	in_addr result;
+	result.s_addr = addr_;
+	return result;
+}
+
+in_addr const inaddr_any = fromAddr (htonl (INADDR_ANY));
 
 std::strong_ordering
     strongMemCompare (void const *const a_, void const *const b_, std::size_t const size_)
@@ -62,7 +69,7 @@ SockAddr::SockAddr (Domain const domain_) noexcept
 }
 
 SockAddr::SockAddr (in_addr_t const addr_, std::uint16_t const port_) noexcept
-    : SockAddr (in_addr{.s_addr = addr_}, port_)
+    : SockAddr (fromAddr (addr_), port_)
 {
 }
 
@@ -223,7 +230,7 @@ std::strong_ordering SockAddr::operator<=> (SockAddr const &that_) const noexcep
 
 void SockAddr::setAddr (in_addr_t const addr_) noexcept
 {
-	setAddr (in_addr{.s_addr = addr_});
+	setAddr (fromAddr (addr_));
 }
 
 void SockAddr::setAddr (in_addr const &addr_) noexcept

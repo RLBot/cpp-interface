@@ -185,13 +185,13 @@ private:
 
 	/// \brief Parameterized constructor
 	/// \param fd_ Socket fd
-	Socket (int fd_);
+	Socket (SOCKET fd_);
 
 	/// \brief Parameterized constructor
 	/// \param fd_ Socket fd
 	/// \param sockName_ Local name
 	/// \param peerName_ Peer name
-	Socket (int fd_, SockAddr const &sockName_, SockAddr const &peerName_);
+	Socket (SOCKET fd_, SockAddr const &sockName_, SockAddr const &peerName_);
 
 	Socket (Socket const &that_) = delete;
 

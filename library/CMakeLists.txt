@@ -89,6 +89,7 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 			/WX              # warnings as errors
 			/wd4251          # 'identifier' : class 'type' needs to have dll-interface
 			/wd4267          # conversion integer type to smaller type
+			/wd5105          # winsdk bug
 			/Zc:preprocessor # use c preprocessor
 		)
 	else()

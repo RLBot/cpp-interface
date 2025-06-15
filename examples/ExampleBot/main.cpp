@@ -29,6 +29,9 @@ int main (int argc_, char *argv_[])
 	TracyNoop;
 #endif
 
+	std::setvbuf (stdout, nullptr, _IONBF, 0);
+	std::setvbuf (stderr, nullptr, _IONBF, 0);
+
 	auto const serverHost = [] () -> char const * {
 		auto const env = std::getenv ("RLBOT_SERVER_IP");
 		if (env)
