@@ -1,4 +1,4 @@
-#include <rlbot/Connection.h>
+#include <rlbot/Client.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -36,7 +36,7 @@ int main (int argc_, char *argv_[])
 	auto const host = argv_[1];
 	auto const port = argv_[2];
 
-	auto connection = rlbot::Connection{};
+	auto connection = rlbot::Client{};
 	if (!connection.connect (host, port))
 	{
 		std::fprintf (stderr, "Failed to connect to [%s]:%s\n", host, port);
@@ -49,7 +49,7 @@ int main (int argc_, char *argv_[])
 	ms.auto_start_agents       = true;
 	ms.wait_for_agents         = true;
 	ms.game_map_upk            = "Stadium_P";
-	ms.game_mode               = rlbot::flat::GameMode::Soccer;
+	ms.game_mode               = rlbot::flat::GameMode::Soccar;
 	ms.skip_replays            = true;
 	ms.instant_start           = true;
 	ms.existing_match_behavior = rlbot::flat::ExistingMatchBehavior::Restart;

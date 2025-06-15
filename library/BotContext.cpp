@@ -24,7 +24,7 @@ BotContext::BotContext (std::unordered_set<unsigned> indices_,
     Message controllableTeamInfo_,
     Message fieldInfo_,
     Message matchConfiguration_,
-    Connection &connection_) noexcept
+    Client &connection_) noexcept
     : indices (std::move (indices_)),
       m_connection (connection_),
       m_bot (std::move (bot_)),

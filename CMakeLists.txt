@@ -22,7 +22,7 @@ FetchContent_Populate(flatbuffers)
 
 FetchContent_Declare(flatbuffers_schema
 	GIT_REPOSITORY https://github.com/RLBot/flatbuffers-schema.git
-	GIT_TAG 35d50a56c27c65f96dc5ecea4037ef8728a6d560
+	GIT_TAG 70bcb31eb8e9093ca9200c913f5e1a2d57fdd025
 )
 FetchContent_Populate(flatbuffers_schema)
 

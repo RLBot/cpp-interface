@@ -1,7 +1,7 @@
 #pragma once
 
 #include <rlbot/Bot.h>
-#include <rlbot/Connection.h>
+#include <rlbot/Client.h>
 
 #include "Message.h"
 #include "Pool.h"
@@ -35,7 +35,7 @@ public:
 	    Message controllableTeamInfo_,
 	    Message fieldInfo_,
 	    Message matchConfiguration_,
-	    Connection &connection_) noexcept;
+	    Client &connection_) noexcept;
 
 	/// @brief Initialize bot
 	void initialize () noexcept;
@@ -79,7 +79,7 @@ private:
 	void service () noexcept;
 
 	/// @brief Connection to the RLBot server
-	Connection &m_connection;
+	Client &m_connection;
 	/// @brief Bot thread
 	std::thread m_thread;
 	/// @brief Mutex

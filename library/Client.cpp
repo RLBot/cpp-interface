@@ -1,4 +1,4 @@
-#include <rlbot/Connection.h>
+#include <rlbot/Client.h>
 
 #include "Log.h"
 #include "Message.h"
@@ -8,14 +8,8 @@
 
 #ifdef _WIN32
 #include "WsaData.h"
-
-#include <WS2tcpip.h>
 #else
 #include <liburing.h>
-
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <unistd.h>
 #endif
 
 #include <atomic>
@@ -36,10 +30,6 @@ constexpr auto COMPLETION_KEY_SOCKET      = 0;
 constexpr auto COMPLETION_KEY_WRITE_QUEUE = 1;
 constexpr auto COMPLETION_KEY_QUIT        = 2;
 
-#ifndef _WIN32
-int (&closesocket) (int) = ::close;
-#endif
-
 template <typename T>
 rlbot::flat::InterfacePacketT buildInterfacePacket (T &&packet_) noexcept
 {
@@ -50,10 +40,10 @@ rlbot::flat::InterfacePacketT buildInterfacePacket (T &&packet_) noexcept
 }
 
 ///////////////////////////////////////////////////////////////////////////
-class rlbot::detail::ConnectionImpl
+class rlbot::detail::ClientImpl
 {
 public:
-	~ConnectionImpl () noexcept;
+	~ClientImpl () noexcept;
 
 	/// @brief Request service thread to terminate
 	void terminate () noexcept;
@@ -127,7 +117,7 @@ public:
 	bool writerIdle = false;
 
 	/// @brief Socket connected to RLBotServer
-	SOCKET sock;
+	UniqueSocket sock;
 
 	/// @brief Output queue mutex
 	std::mutex writerMutex;
@@ -157,12 +147,12 @@ public:
 	std::vector<Message> outputQueue;
 };
 
-ConnectionImpl::~ConnectionImpl () noexcept
+ClientImpl::~ClientImpl () noexcept
 {
 	join ();
 }
 
-void ConnectionImpl::terminate () noexcept
+void ClientImpl::terminate () noexcept
 {
 	{
 		auto const lock = std::scoped_lock (writerMutex);
@@ -176,17 +166,12 @@ void ConnectionImpl::terminate () noexcept
 	pushEvent (COMPLETION_KEY_QUIT);
 }
 
-void ConnectionImpl::join () noexcept
+void ClientImpl::join () noexcept
 {
 	if (running.load (std::memory_order_relaxed))
 		serviceThread.join ();
 
-	if (sock != INVALID_SOCKET)
-	{
-		if (::closesocket (sock) != 0)
-			error ("closesocket: %s\n", errorMessage (true));
-		sock = INVALID_SOCKET;
-	}
+	sock.reset ();
 
 #ifdef _WIN32
 	if (iocpHandle)
@@ -206,7 +191,7 @@ void ConnectionImpl::join () noexcept
 	running.store (false, std::memory_order_relaxed);
 }
 
-void ConnectionImpl::requestRead () noexcept
+void ClientImpl::requestRead () noexcept
 {
 #ifdef _WIN32
 	ZoneScopedNS ("requestRead", 16);
@@ -278,7 +263,7 @@ void ConnectionImpl::requestRead () noexcept
 #endif
 }
 
-void ConnectionImpl::requestWrite () noexcept
+void ClientImpl::requestWrite () noexcept
 {
 	ZoneScopedNS ("requestWrite", 16);
 
@@ -289,7 +274,7 @@ void ConnectionImpl::requestWrite () noexcept
 	requestWriteLocked (lock);
 }
 
-void ConnectionImpl::requestWriteLocked (std::unique_lock<std::mutex> &lock_) noexcept
+void ClientImpl::requestWriteLocked (std::unique_lock<std::mutex> &lock_) noexcept
 {
 	ZoneScopedNS ("requestWriteLocked", 16);
 
@@ -396,14 +381,14 @@ void ConnectionImpl::requestWriteLocked (std::unique_lock<std::mutex> &lock_) no
 	}
 }
 
-Pool<Buffer>::Ref ConnectionImpl::getBuffer () noexcept
+Pool<Buffer>::Ref ClientImpl::getBuffer () noexcept
 {
 	// reduce lock contention by spreading requests across multiple pools
 	auto const index = bufferPoolIndex.fetch_add (1, std::memory_order_relaxed);
 	return bufferPools[index % bufferPools.size ()]->getObject ();
 }
 
-void ConnectionImpl::pushEvent (int event_) noexcept
+void ClientImpl::pushEvent (int event_) noexcept
 {
 #ifdef _WIN32
 	if (iocpHandle)
@@ -447,13 +432,13 @@ void ConnectionImpl::pushEvent (int event_) noexcept
 }
 
 ///////////////////////////////////////////////////////////////////////////
-Connection::~Connection () noexcept = default;
+Client::~Client () noexcept = default;
 
-Connection::Connection () noexcept : m_impl (new ConnectionImpl{})
+Client::Client () noexcept : m_impl (new ClientImpl{})
 {
 }
 
-bool Connection::connect (char const *const host_, char const *const port_) noexcept
+bool Client::connect (char const *const host_, char const *const service_) noexcept
 {
 	if (m_impl->running.load (std::memory_order_relaxed))
 	{
@@ -467,102 +452,33 @@ bool Connection::connect (char const *const host_, char const *const port_) noex
 
 #ifdef _WIN32
 	if (!m_impl->wsaData.init ())
-	{
-		m_impl->terminate ();
-		m_impl->join ();
 		return false;
-	}
 #endif
 
+	// resolve host/port
+	SockAddr addr;
+	if (!SockAddr::resolve (host_, service_, addr))
 	{
-		// resolve host/port
-		sockaddr_storage addr;
-		socklen_t addrLen = sizeof (addr);
-		if (!resolve (host_, port_, reinterpret_cast<sockaddr &> (addr), addrLen))
-		{
-			error ("Failed to lookup [%s]:%s\n", host_, port_);
-			m_impl->terminate ();
-			m_impl->join ();
-			return false;
-		}
-
-		m_impl->sock = ::socket (addr.ss_family, SOCK_STREAM, 0);
-		if (m_impl->sock == INVALID_SOCKET)
-		{
-			error ("socket: %s\n", errorMessage (true));
-			m_impl->terminate ();
-			m_impl->join ();
-			return false;
-		}
-
-		if (::connect (m_impl->sock, reinterpret_cast<sockaddr const *> (&addr), addrLen) != 0)
-		{
-			error ("connect: %s\n", errorMessage (true));
-			m_impl->terminate ();
-			m_impl->join ();
-			return false;
-		}
+		error ("Failed to lookup [%s]:%s\n", host_, service_);
+		return false;
 	}
 
-	{
-		int const noDelay = 1;
-		if (::setsockopt (m_impl->sock,
-		        IPPROTO_TCP,
-		        TCP_NODELAY,
-		        reinterpret_cast<char const *> (&noDelay),
-		        sizeof (noDelay)) != 0) [[unlikely]]
-		{
-			error ("setsockopt(TCP_NODELAY, 1): %s\n", errorMessage (true));
-			m_impl->terminate ();
-			m_impl->join ();
-			return false;
-		}
-	}
-
-	{
-		auto const size = static_cast<int> (SOCKET_BUFFER_SIZE);
-		if (::setsockopt (m_impl->sock,
-		        SOL_SOCKET,
-		        SO_RCVBUF,
-		        reinterpret_cast<char const *> (&size),
-		        sizeof (size)) != 0) [[unlikely]]
-		{
-			error ("setsockopt(SO_RCVBUF, %d): %s\n", size, errorMessage (true));
-			m_impl->terminate ();
-			m_impl->join ();
-			return false;
-		}
-
-		if (::setsockopt (m_impl->sock,
-		        SOL_SOCKET,
-		        SO_SNDBUF,
-		        reinterpret_cast<char const *> (&size),
-		        sizeof (size)) != 0) [[unlikely]]
-		{
-			error ("setsockopt(SO_SNDBUF, %d): %s\n", size, errorMessage (true));
-			m_impl->terminate ();
-			m_impl->join ();
-			return false;
-		}
-	}
+	auto sock = Socket::create (addr.domain (), Socket::eStream);
+	if (!sock || !sock->setNoDelay () || !sock->setRecvBufferSize (SOCKET_BUFFER_SIZE) ||
+	    !sock->setSendBufferSize (SOCKET_BUFFER_SIZE) || !sock->connect (addr))
+		return false;
 
 #ifdef _WIN32
 	m_impl->iocpHandle = CreateIoCompletionPort (
 	    reinterpret_cast<HANDLE> (m_impl->sock), nullptr, COMPLETION_KEY_SOCKET, 0);
 	if (!m_impl->iocpHandle)
-	{
-		m_impl->terminate ();
-		m_impl->join ();
 		return false;
-	}
 #else
 	{
 		auto const rc = io_uring_queue_init (64, &m_impl->ring, 0);
 		if (rc < 0)
 		{
 			error ("io_uring_queue_init: %s\n", std::strerror (-rc));
-			m_impl->terminate ();
-			m_impl->join ();
 			return false;
 		}
 
@@ -586,12 +502,13 @@ bool Connection::connect (char const *const host_, char const *const port_) noex
 	}
 
 	{
-		auto const rc = io_uring_register_files (&m_impl->ring, &m_impl->sock, 1);
+		auto const fd = sock->fd ();
+		auto const rc = io_uring_register_files (&m_impl->ring, &fd, 1);
 		if (rc < 0)
 		{
 			// doesn't work on WSL?
 			error ("io_uring_register_files: %s\n", std::strerror (-rc));
-			m_impl->ringSocketFd   = m_impl->sock;
+			m_impl->ringSocketFd   = fd;
 			m_impl->ringSocketFlag = 0;
 		}
 		else
@@ -625,16 +542,16 @@ bool Connection::connect (char const *const host_, char const *const port_) noex
 		if (rc < 0)
 		{
 			error ("io_uring_register_buffers: %s\n", std::strerror (-rc));
-			m_impl->terminate ();
-			m_impl->join ();
 			return false;
 		}
 	}
 #endif
 
+	m_impl->sock = std::move (sock);
+
 	m_impl->outputQueue.reserve (128);
 
-	m_impl->serviceThread = std::thread (&Connection::serviceThread, this);
+	m_impl->serviceThread = std::thread (&Client::serviceThread, this);
 
 	m_impl->inBuffer = m_impl->getBuffer ();
 
@@ -645,22 +562,22 @@ bool Connection::connect (char const *const host_, char const *const port_) noex
 	return true;
 }
 
-bool Connection::connected () const noexcept
+bool Client::connected () const noexcept
 {
 	return m_impl->running.load (std::memory_order_relaxed);
 }
 
-void Connection::terminate () noexcept
+void Client::terminate () noexcept
 {
 	m_impl->terminate ();
 }
 
-void Connection::join () noexcept
+void Client::join () noexcept
 {
 	m_impl->join ();
 }
 
-void Connection::sendInterfacePacket (rlbot::flat::InterfacePacketT const &packet_) noexcept
+void Client::sendInterfacePacket (rlbot::flat::InterfacePacketT const &packet_) noexcept
 {
 	auto fbb = m_impl->fbbPool->getObject ();
 	fbb->Finish (rlbot::flat::CreateInterfacePacket (*fbb, &packet_));
@@ -734,85 +651,85 @@ void Connection::sendInterfacePacket (rlbot::flat::InterfacePacketT const &packe
 #endif
 }
 
-void Connection::sendDisconnectSignal (rlbot::flat::DisconnectSignalT packet_) noexcept
+void Client::sendDisconnectSignal (rlbot::flat::DisconnectSignalT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue DisconnectSignal", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendStartCommand (rlbot::flat::StartCommandT packet_) noexcept
+void Client::sendStartCommand (rlbot::flat::StartCommandT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue StartCommand", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendMatchConfiguration (rlbot::flat::MatchConfigurationT packet_) noexcept
+void Client::sendMatchConfiguration (rlbot::flat::MatchConfigurationT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue MatchConfiguration", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendPlayerInput (rlbot::flat::PlayerInputT packet_) noexcept
+void Client::sendPlayerInput (rlbot::flat::PlayerInputT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue PlayerInput", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendDesiredGameState (rlbot::flat::DesiredGameStateT packet_) noexcept
+void Client::sendDesiredGameState (rlbot::flat::DesiredGameStateT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue DesiredGameState", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendRenderGroup (rlbot::flat::RenderGroupT packet_) noexcept
+void Client::sendRenderGroup (rlbot::flat::RenderGroupT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue RenderGroup", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendRemoveRenderGroup (rlbot::flat::RemoveRenderGroupT packet_) noexcept
+void Client::sendRemoveRenderGroup (rlbot::flat::RemoveRenderGroupT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue RemoveRenderGroup", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendMatchComm (rlbot::flat::MatchCommT packet_) noexcept
+void Client::sendMatchComm (rlbot::flat::MatchCommT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue MatchComm", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendConnectionSettings (rlbot::flat::ConnectionSettingsT packet_) noexcept
+void Client::sendConnectionSettings (rlbot::flat::ConnectionSettingsT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue ConnectionSettings", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendStopCommand (rlbot::flat::StopCommandT packet_) noexcept
+void Client::sendStopCommand (rlbot::flat::StopCommandT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue StopCommand", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendSetLoadout (rlbot::flat::SetLoadoutT packet_) noexcept
+void Client::sendSetLoadout (rlbot::flat::SetLoadoutT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue SetLoadout", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendInitComplete (rlbot::flat::InitCompleteT packet_) noexcept
+void Client::sendInitComplete (rlbot::flat::InitCompleteT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue InitComplete", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::sendRenderingStatus (rlbot::flat::RenderingStatusT packet_) noexcept
+void Client::sendRenderingStatus (rlbot::flat::RenderingStatusT packet_) noexcept
 {
 	ZoneScopedNS ("enqueue RenderingStatus", 16);
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
-void Connection::handleMessage (detail::Message &message_) noexcept
+void Client::handleMessage (detail::Message &message_) noexcept
 {
 	auto const packet = message_.corePacket (true);
 	if (!packet) [[unlikely]]
@@ -821,7 +738,7 @@ void Connection::handleMessage (detail::Message &message_) noexcept
 		handleCorePacket (packet);
 }
 
-void Connection::handleCorePacket (rlbot::flat::CorePacket const *const packet_) noexcept
+void Client::handleCorePacket (rlbot::flat::CorePacket const *const packet_) noexcept
 {
 	switch (packet_->message_type ())
 	{
@@ -863,50 +780,49 @@ void Connection::handleCorePacket (rlbot::flat::CorePacket const *const packet_)
 	}
 }
 
-void Connection::handleDisconnectSignal (
-    rlbot::flat::DisconnectSignal const *const packet_) noexcept
+void Client::handleDisconnectSignal (rlbot::flat::DisconnectSignal const *const packet_) noexcept
 {
 	(void)packet_;
 }
 
-void Connection::handleGamePacket (rlbot::flat::GamePacket const *const packet_) noexcept
+void Client::handleGamePacket (rlbot::flat::GamePacket const *const packet_) noexcept
 {
 	(void)packet_;
 }
 
-void Connection::handleFieldInfo (rlbot::flat::FieldInfo const *const packet_) noexcept
+void Client::handleFieldInfo (rlbot::flat::FieldInfo const *const packet_) noexcept
 {
 	(void)packet_;
 }
 
-void Connection::handleMatchConfiguration (
+void Client::handleMatchConfiguration (
     rlbot::flat::MatchConfiguration const *const packet_) noexcept
 {
 	(void)packet_;
 }
 
-void Connection::handleMatchComm (rlbot::flat::MatchComm const *const packet_) noexcept
+void Client::handleMatchComm (rlbot::flat::MatchComm const *const packet_) noexcept
 {
 	(void)packet_;
 }
 
-void Connection::handleBallPrediction (rlbot::flat::BallPrediction const *const packet_) noexcept
+void Client::handleBallPrediction (rlbot::flat::BallPrediction const *const packet_) noexcept
 {
 	(void)packet_;
 }
 
-void Connection::handleControllableTeamInfo (
+void Client::handleControllableTeamInfo (
     rlbot::flat::ControllableTeamInfo const *const packet_) noexcept
 {
 	(void)packet_;
 }
 
-void Connection::handleRenderingStatus (rlbot::flat::RenderingStatus const *const packet_) noexcept
+void Client::handleRenderingStatus (rlbot::flat::RenderingStatus const *const packet_) noexcept
 {
 	(void)packet_;
 }
 
-void Connection::serviceThread () noexcept
+void Client::serviceThread () noexcept
 {
 #ifdef TRACY_ENABLE
 	tracy::SetThreadName ("serviceThread");
@@ -997,7 +913,7 @@ void Connection::serviceThread () noexcept
 	m_impl->terminate ();
 }
 
-void Connection::handleRead (std::size_t count_) noexcept
+void Client::handleRead (std::size_t count_) noexcept
 {
 	ZoneScopedNS ("handleRead", 16);
 
@@ -1066,7 +982,7 @@ void Connection::handleRead (std::size_t count_) noexcept
 	m_impl->requestRead ();
 }
 
-void Connection::handleWrite (std::size_t count_) noexcept
+void Client::handleWrite (std::size_t count_) noexcept
 {
 	ZoneScopedNS ("handleWrite", 16);
 

@@ -6,35 +6,34 @@
 #include <interfacepacket_generated.h>
 
 #include <memory>
-#include <string_view>
 
 namespace rlbot
 {
 namespace detail
 {
-class ConnectionImpl;
+class ClientImpl;
 class Message;
 }
 
-class RLBotCPP_API Connection
+class RLBotCPP_API Client
 {
 public:
-	virtual ~Connection () noexcept;
+	virtual ~Client () noexcept;
 
-	Connection () noexcept;
+	Client () noexcept;
 
-	Connection (Connection const &) = delete;
+	Client (Client const &) = delete;
 
-	Connection &operator= (Connection const &) = delete;
+	Client &operator= (Client const &) = delete;
 
-	Connection (Connection &&) = default;
+	Client (Client &&) = default;
 
-	Connection &operator= (Connection &&) = default;
+	Client &operator= (Client &&) = default;
 
 	/// @brief Connect to server
 	/// @param host_ Host to connect to
 	/// @param service_ Service (port) to connect to
-	bool connect (char const *host_, char const *service_) noexcept;
+	bool connect (char const *host_ = "127.0.0.1", char const *service_ = "23234") noexcept;
 
 	/// @brief Check if connected to server
 	bool connected () const noexcept;
@@ -102,7 +101,7 @@ public:
 	void sendRenderingStatus (rlbot::flat::RenderingStatusT packet_) noexcept;
 
 private:
-	/// @brief Handle Message
+	/// @brief Handle message
 	/// @param message_ Message to handle
 	virtual void handleMessage (detail::Message &message_) noexcept;
 
@@ -155,6 +154,6 @@ private:
 	void handleWrite (std::size_t count_) noexcept;
 
 	/// @brief Implementation
-	std::unique_ptr<detail::ConnectionImpl> m_impl;
+	std::unique_ptr<detail::ClientImpl> m_impl;
 };
 }

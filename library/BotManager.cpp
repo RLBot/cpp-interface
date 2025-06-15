@@ -28,7 +28,7 @@ public:
 	/// @param connection_ Connection to the RLBot server
 	/// @param batchHivemind_ Batch hivemind
 	/// @param spawn_ Bot spawning function
-	BotManagerImpl (Connection &connection_,
+	BotManagerImpl (Client &connection_,
 	    bool const batchHivemind_,
 	    std::unique_ptr<Bot> (
 	        &spawn_) (std::unordered_set<unsigned>, unsigned, std::string) noexcept) noexcept;
@@ -40,7 +40,7 @@ public:
 	void clearBots () noexcept;
 
 	/// @brief Connection to the RLBot server
-	Connection &connection;
+	Client &connection;
 
 	/// @brief Bot spawner
 	std::unique_ptr<Bot> (&spawn) (std::unordered_set<unsigned>, unsigned, std::string) noexcept;
@@ -61,7 +61,7 @@ public:
 
 BotManagerImpl::~BotManagerImpl () noexcept = default;
 
-BotManagerImpl::BotManagerImpl (Connection &connection_,
+BotManagerImpl::BotManagerImpl (Client &connection_,
     bool const batchHivemind_,
     std::unique_ptr<Bot> (
         &spawn_) (std::unordered_set<unsigned>, unsigned, std::string) noexcept) noexcept
@@ -236,7 +236,7 @@ bool BotManagerBase::connect (char const *const host_,
 		}
 	}
 
-	if (!Connection::connect (host_, service_))
+	if (!Client::connect (host_, service_))
 		return false;
 
 	sendConnectionSettings ({
@@ -355,7 +355,7 @@ void BotManagerBase::handleMessage (detail::Message &message_) noexcept
 			auto const p = buf.data ();
 
 			for (std::size_t i = 0; i < size; ++i)
-				std::sprintf (p + 2 * i, "%02x", content->Get (i));
+				std::sprintf (p + 2 * i, "%02x", data[i]);
 
 			info ("\tTeam %" PRIu32 " Index %" PRIu32 ": %s\n", team, index, p);
 		}
