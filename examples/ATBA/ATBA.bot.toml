@@ -10,7 +10,7 @@ hivemind = true
 [details]
 description = "Made possible by RLBot"
 fun_fact = "This is a test bot"
-source_link = "https://github.com/mtheall/RLBotCPP"
+source_link = "https://github.com/RLBot/cpp-interface"
 developer = "BotMaker"
 language = "C++"
 tags = []

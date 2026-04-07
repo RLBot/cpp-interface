@@ -7,7 +7,9 @@
 #include "Pool.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -68,6 +70,11 @@ public:
 	/// @note This triggers the bot's matchComm()
 	void addMatchComm (Message matchComm_, bool notify_) noexcept;
 
+	/// @brief Handle ping response
+	/// @param pingResponse_ Ping response message
+	/// @param notify_ Whether to notify thread wakeup
+	void pingResponse (Message pingResponse_, bool notify_) noexcept;
+
 	/// @brief index_ Index into gamePacket->players ()
 	std::unordered_set<unsigned> const indices;
 
@@ -111,6 +118,11 @@ private:
 	Message m_fieldInfoMessage;
 	/// @brief Match settings message
 	Message m_matchConfigurationMessage;
+
+	/// @brief Ping requests
+	std::unordered_set<std::uint64_t> m_pingRequests;
+	/// @brief Ping responses
+	std::vector<std::chrono::microseconds> m_pingResponses;
 
 	/// @brief Controllable team info
 	rlbot::flat::ControllableTeamInfo const *m_controllableTeamInfo = nullptr;

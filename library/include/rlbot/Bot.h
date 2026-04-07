@@ -1,11 +1,11 @@
 #pragma once
 
-#include <rlbot/RLBotCPP.h>
+#include <rlbot/RLBot.h>
 
 #include <interfacepacket_generated.h>
 
+#include <chrono>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -17,7 +17,7 @@
 namespace rlbot
 {
 /// @brief Bot base class
-class RLBotCPP_API Bot
+class RLBot_API Bot
 {
 public:
 	virtual ~Bot () noexcept = default;
@@ -60,6 +60,10 @@ public:
 	/// @note Match comms from other bots in the same manager are also called here
 	virtual void matchComm (rlbot::flat::MatchComm const *matchComm_) noexcept;
 
+	/// @brief Ping response from RLBot server
+	/// @param latency_ Latency in microseconds
+	virtual void pingResponse (std::chrono::microseconds latency_) noexcept;
+
 	/// @brief Get loadout for this bot
 	/// This is called immediately after the bot is spawned
 	/// @param index_ Index into gamePacket->players ()
@@ -67,7 +71,7 @@ public:
 
 	/// @brief Retrieves pending match comms
 	/// This is called by the bot manager after getOutput
-	std::optional<std::deque<rlbot::flat::MatchCommT>> getMatchComms () noexcept;
+	std::optional<std::vector<rlbot::flat::MatchCommT>> getMatchComms () noexcept;
 
 	/// @brief Retrieves pending desired game state
 	/// This is called by the bot manager after getOutput
@@ -78,6 +82,9 @@ public:
 	/// This is called by the bot manager after getOutput
 	std::optional<std::unordered_map<int, std::vector<rlbot::flat::RenderMessageT>>>
 	    getRenderMessages () noexcept;
+
+	/// @brief Whether a ping is requested
+	bool getPingRequested () noexcept;
 
 	/// @brief Index into gamePacket->players ()
 	std::unordered_set<unsigned> const indices;
@@ -108,6 +115,9 @@ protected:
 	    std::vector<std::uint8_t> data_,
 	    bool teamOnly_) noexcept;
 
+	/// @brief Send ping request to RLBot server
+	void sendPingRequest () noexcept;
+
 	/// @brief Send desired game state
 	/// @param gameState_ Desired game state to send
 	void sendDesiredGameState (rlbot::flat::DesiredGameStateT gameState_) noexcept;
@@ -125,7 +135,7 @@ private:
 	/// @brief Mutex
 	std::mutex m_mutex;
 	/// @brief Pending match comms
-	std::optional<std::deque<rlbot::flat::MatchCommT>> m_matchComms;
+	std::vector<rlbot::flat::MatchCommT> m_matchComms;
 	/// @brief Pending desired game state
 	std::optional<rlbot::flat::DesiredGameStateT> m_gameState;
 	/// @brief Pending render messages
@@ -133,5 +143,7 @@ private:
 	    m_renderMessages;
 	/// @brief Convenience storage for outputs
 	std::unordered_map<unsigned, rlbot::flat::ControllerState> m_outputs;
+	/// @brief Whether a ping is requested
+	bool m_pingRequested = false;
 };
 }

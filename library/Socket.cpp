@@ -117,7 +117,8 @@ bool Socket::connect (SockAddr const &addr_)
 {
 	if (::connect (m_fd, addr_, addr_.size ()) != 0)
 	{
-		if (errno != EINPROGRESS)
+		auto const err = lastError ();
+		if (err != EINPROGRESS && err != EWOULDBLOCK)
 			error ("connect: %s\n", errorMessage (true));
 		else
 		{
@@ -354,7 +355,7 @@ std::make_signed_t<std::size_t>
 	assert (size_);
 
 	auto const rc = ::recv (m_fd, reinterpret_cast<char *> (buffer_), size_, oob_ ? MSG_OOB : 0);
-	if (rc < 0 && errno != EWOULDBLOCK)
+	if (rc < 0 && lastError () != EWOULDBLOCK)
 		error ("recv: %s\n", errorMessage (true));
 
 	return rc;
@@ -370,7 +371,7 @@ std::make_signed_t<std::size_t>
 
 	auto const rc =
 	    ::recvfrom (m_fd, reinterpret_cast<char *> (buffer_), size_, 0, addr_, &addrLen);
-	if (rc < 0 && errno != EWOULDBLOCK)
+	if (rc < 0 && lastError () != EWOULDBLOCK)
 		error ("recvfrom: %s\n", errorMessage (true));
 
 	return rc;
@@ -382,7 +383,7 @@ std::make_signed_t<std::size_t> Socket::write (void const *const buffer_, std::s
 	assert (size_ > 0);
 
 	auto const rc = ::send (m_fd, reinterpret_cast<char const *> (buffer_), size_, 0);
-	if (rc < 0 && errno != EWOULDBLOCK)
+	if (rc < 0 && lastError () != EWOULDBLOCK)
 		error ("send: %s\n", errorMessage (true));
 
 	return rc;
@@ -396,7 +397,7 @@ std::make_signed_t<std::size_t>
 
 	auto const rc =
 	    ::sendto (m_fd, reinterpret_cast<char const *> (buffer_), size_, 0, addr_, addr_.size ());
-	if (rc < 0 && errno != EWOULDBLOCK)
+	if (rc < 0 && lastError () != EWOULDBLOCK)
 		error ("sendto: %s\n", errorMessage (true));
 
 	return rc;
@@ -455,7 +456,18 @@ int Socket::poll (PollInfo *const info_,
 int Socket::lastError () noexcept
 {
 #ifdef _WIN32
-	return WSAGetLastError ();
+	auto const error = WSAGetLastError ();
+	switch (error)
+	{
+	case WSAEWOULDBLOCK:
+		return EWOULDBLOCK;
+
+	case WSAEINPROGRESS:
+		return EINPROGRESS;
+
+	default:
+		return error;
+	}
 #else
 	return errno;
 #endif

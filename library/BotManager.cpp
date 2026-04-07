@@ -272,6 +272,19 @@ void BotManagerBase::handleMessage (detail::Message &message_) noexcept
 		break;
 	}
 
+	if (packet->message_type () == rlbot::flat::CoreMessage::PingResponse) [[unlikely]]
+	{
+		ZoneScopedNS ("handle PingResponse", 16);
+
+		for (auto &bot : m_impl->bots | std::views::drop (1))
+			bot.pingResponse (message_, true);
+
+		// handle the first bot on the reader thread
+		auto &bot = m_impl->bots.front ();
+		bot.pingResponse (message_, false);
+		return;
+	}
+
 	if (packet->message_type () == rlbot::flat::CoreMessage::DisconnectSignal) [[unlikely]]
 	{
 		terminate ();
@@ -365,8 +378,11 @@ void BotManagerBase::handleMessage (detail::Message &message_) noexcept
 
 		// handle the first bot on the reader thread
 		auto &bot = m_impl->bots.front ();
+		bot.addMatchComm (message_, false);
 		bot.loopOnce ();
 
 		return;
 	}
+
+	Client::handleMessage (message_);
 }

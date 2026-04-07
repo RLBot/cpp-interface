@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(RLBotCPP VERSION 2.0.0)
+project(RLBot VERSION 2.0.0)
 
-option(RLBOT_CPP_ENABLE_LTO "Enable RLBotCPP link-time optimization" ON)
-option(RLBOT_CPP_ENABLE_TRACY "Enable tracy profiler" OFF)
-option(RLBOT_CPP_BUILD_BENCHMARK "Build benchmark application" OFF)
+option(RLBOT_ENABLE_LTO "Enable RLBot link-time optimization" ON)
+option(RLBOT_ENABLE_TRACY "Enable tracy profiler" OFF)
+option(RLBOT_BUILD_BENCHMARK "Build benchmark application" OFF)
 
 include(CheckIPOSupported)
 check_ipo_supported(RESULT LTO_SUPPORTED)
@@ -14,7 +14,8 @@ ProcessorCount(NPROC)
 
 include(FetchContent)
 
-FetchContent_Declare(flatbuffers
+FetchContent_Declare(
+	flatbuffers
 	GIT_REPOSITORY https://github.com/google/flatbuffers.git
 	GIT_TAG v25.2.10
 )
@@ -22,14 +23,14 @@ FetchContent_Populate(flatbuffers)
 
 FetchContent_Declare(flatbuffers_schema
 	GIT_REPOSITORY https://github.com/RLBot/flatbuffers-schema.git
-	GIT_TAG 70bcb31eb8e9093ca9200c913f5e1a2d57fdd025
+	GIT_TAG e6f134151dc84a7e1780b515bdac57ec1dd098de
 )
 FetchContent_Populate(flatbuffers_schema)
 
-if(RLBOT_CPP_ENABLE_TRACY)
+if(RLBOT_ENABLE_TRACY)
 	FetchContent_Declare(tracy
 		GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-		GIT_TAG v0.12.0
+		GIT_TAG v0.13.1
 	)
 	FetchContent_Populate(tracy)
 endif()
@@ -86,7 +87,7 @@ endif()
 if(LINUX OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	FetchContent_Declare(liburing
 		GIT_REPOSITORY https://github.com/axboe/liburing.git
-		GIT_TAG liburing-2.9
+		GIT_TAG liburing-2.14
 	)
 	FetchContent_Populate(liburing)
 
@@ -148,9 +149,8 @@ add_custom_command(
 		${flatbuffers_schema_SOURCE_DIR}/schema/vector.fbs
 )
 
-
 add_custom_target(rlbot-generated
-	DEPENDS 
+	DEPENDS
 		${CMAKE_CURRENT_BINARY_DIR}/corepacket_generated.h
 		${CMAKE_CURRENT_BINARY_DIR}/interfacepacket_generated.h
 		${CMAKE_CURRENT_BINARY_DIR}/misc_generated.h
@@ -161,6 +161,6 @@ add_subdirectory(library)
 add_subdirectory(examples/ATBA)
 add_subdirectory(examples/ExampleBot)
 
-if(RLBOT_CPP_BUILD_BENCHMARK)
+if(RLBOT_BUILD_BENCHMARK)
 	add_subdirectory(benchmark)
 endif()

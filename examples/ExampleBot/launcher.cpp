@@ -30,15 +30,22 @@ int main (int argc_, char *argv_[])
 		return EXIT_FAILURE;
 	}
 
-	if (argc_ <= 2)
-	{
-		std::fprintf (stderr, "Usage: %s <addr> <port>\n", argv_[0]);
-		std::free (cwd);
-		return EXIT_FAILURE;
-	}
+	auto const serverHost = [] () -> char const * {
+		auto const env = std::getenv ("RLBOT_SERVER_IP");
+		if (env)
+			return env;
+		return "127.0.0.1";
+	}();
 
-	auto const host = argv_[1];
-	auto const port = argv_[2];
+	auto const serverPort = [] () -> char const * {
+		auto const env = std::getenv ("RLBOT_SERVER_PORT");
+		if (env)
+			return env;
+		return "23234";
+	}();
+
+	auto const host = argc_ > 1 ? argv_[1] : serverHost;
+	auto const port = argc_ > 2 ? argv_[2] : serverPort;
 
 	auto connection = rlbot::Client{};
 	if (!connection.connect (host, port))
@@ -61,6 +68,9 @@ int main (int argc_, char *argv_[])
 	ms.enable_state_setting    = true;
 	ms.auto_save_replay        = false;
 	ms.freeplay                = false;
+
+	ms.mutators               = std::make_unique<rlbot::flat::MutatorSettingsT> ();
+	ms.mutators->match_length = rlbot::flat::MatchLengthMutator::Unlimited;
 
 	for (unsigned i = 0; i < 4; ++i)
 	{

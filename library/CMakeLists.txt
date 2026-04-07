@@ -1,17 +1,20 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(RLBotCPP VERSION 1.0.0)
+project(RLBot VERSION 1.0.0)
 
 add_library(${PROJECT_NAME} SHARED)
 add_library(${PROJECT_NAME}-static STATIC)
+
+add_library(${PROJECT_NAME}::shared ALIAS ${PROJECT_NAME})
+add_library(${PROJECT_NAME}::static ALIAS ${PROJECT_NAME}-static)
 
 foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 	target_sources(${TARGET} PRIVATE
 		include/rlbot/Bot.h
 		include/rlbot/BotManager.h
 		include/rlbot/Client.h
-		include/rlbot/RLBotCPP.h
-
+		include/rlbot/RLBot.h
+		include/rlbot/Server.h
 		Bot.cpp
 		BotContext.cpp
 		BotContext.h
@@ -23,6 +26,7 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 		Message.h
 		Pool.cpp
 		Pool.h
+		Server.cpp
 		SockAddr.cpp
 		SockAddr.h
 		Socket.cpp
@@ -53,7 +57,7 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 
 	target_include_directories(${TARGET} SYSTEM PUBLIC ${flatbuffers_SOURCE_DIR}/include)
 
-	if(RLBOT_CPP_ENABLE_TRACY)
+	if(RLBOT_ENABLE_TRACY)
 		target_include_directories(${TARGET} SYSTEM PUBLIC ${tracy_SOURCE_DIR}/public)
 	endif()
 
@@ -73,13 +77,18 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 				WIN32_LEAN_AND_MEAN
 				_CRT_SECURE_NO_DEPRECATE
 				_CRT_SECURE_NO_WARNINGS
-				_WIN32_WINNT=_WIN32_WINNT_WINBLUE
+				_WIN32_WINNT=0x0603
 		)
 	endif()
 
 	if(MSVC)
 		# standard definitions to enable
 		target_compile_definitions(${TARGET} PRIVATE
+			NOMINMAX
+			WIN32_LEAN_AND_MEAN
+			_CRT_SECURE_NO_DEPRECATE
+			_CRT_SECURE_NO_WARNINGS
+			_WIN32_WINNT=0x0603
 		)
 		# standard compile options
 		target_compile_options(${TARGET} PRIVATE
@@ -123,7 +132,7 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 		)
 	endif()
 
-	if(RLBOT_CPP_ENABLE_TRACY)
+	if(RLBOT_ENABLE_TRACY)
 		target_compile_definitions(${TARGET} PUBLIC TRACY_ENABLE)
 		target_sources(${TARGET} PRIVATE ${tracy_SOURCE_DIR}/public/TracyClient.cpp)
 	endif()
@@ -135,7 +144,7 @@ foreach(TARGET ${PROJECT_NAME} ${PROJECT_NAME}-static)
 
 	if(LTO_SUPPORTED)
 		set_target_properties(${TARGET} PROPERTIES
-			INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_CPP_ENABLE_LTO}>
+			INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_ENABLE_LTO}>
 			INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
 		)
 	endif()

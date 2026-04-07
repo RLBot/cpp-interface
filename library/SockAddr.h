@@ -34,6 +34,12 @@ public:
 	/// \brief ::
 	static SockAddr const AnyIPv6;
 
+	/// \brief 127.0.0.1
+	static SockAddr const LoopbackIPv4;
+
+	/// \brief ::1
+	static SockAddr const LoopbackIPv6;
+
 	~SockAddr () noexcept;
 
 	SockAddr () noexcept;
@@ -106,6 +112,10 @@ public:
 
 	/// \brief Comparison operator
 	std::strong_ordering operator<=> (SockAddr const &that_) const noexcept;
+
+	/// \brief Get address with specified port
+	/// \param port_ Port to set (host byte order)
+	SockAddr withPort (std::uint16_t port_ = 0) const noexcept;
 
 	/// \brief sockaddr domain
 	Domain domain () const noexcept;

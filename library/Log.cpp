@@ -7,10 +7,12 @@
 
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <mutex>
 
 namespace
@@ -25,8 +27,32 @@ enum class LogLevel
 	Default = Warning,
 };
 
+std::string currentDateTime () noexcept
+{
+	auto const now  = std::chrono::system_clock::now ();
+	auto const time = std::chrono::system_clock::to_time_t (now);
+	auto const us =
+	    std::chrono::duration_cast<std::chrono::microseconds> (now.time_since_epoch ()).count () %
+	    1000000;
+
+	struct tm tm;
+#ifdef _WIN32
+	::gmtime_s (&tm, &time);
+#else
+	::gmtime_r (&time, &tm);
+#endif
+
+	std::array<char, 32> buffer;
+	auto const rc =
+	    std::strftime (buffer.data (), buffer.size (), "%Y-%m-%d %H:%M:%S", std::gmtime (&time));
+
+	std::snprintf (buffer.data () + rc, buffer.size () - rc, ".%06ld", static_cast<long> (us));
+
+	return buffer.data ();
+}
+
 auto const logLevel = [] {
-	auto const level = std::getenv ("RLBOTCPP_LOG_LEVEL");
+	auto const level = std::getenv ("RLBOT_LOG_LEVEL");
 	if (!level || std::strlen (level) == 0)
 		return LogLevel::Default;
 
@@ -85,7 +111,7 @@ void rlbot::detail::error (char const *format_, ...) noexcept
 	va_start (ap, format_);
 	{
 		auto const lock = std::scoped_lock (stderrMutex);
-		std::fputs ("[Error  ] ", stderr);
+		std::fprintf (stderr, "%s [Error  ] ", currentDateTime ().c_str ());
 		std::vfprintf (stderr, format_, ap);
 		std::fflush (stderr);
 	}
@@ -102,7 +128,7 @@ void rlbot::detail::warning (char const *format_, ...) noexcept
 	va_start (ap, format_);
 	{
 		auto const lock = std::scoped_lock (stderrMutex);
-		std::fputs ("[Warning] ", stderr);
+		std::fprintf (stderr, "%s [Warning] ", currentDateTime ().c_str ());
 		std::vfprintf (stderr, format_, ap);
 		std::fflush (stderr);
 	}
@@ -119,7 +145,7 @@ void rlbot::detail::info (char const *format_, ...) noexcept
 	va_start (ap, format_);
 	{
 		auto const lock = std::scoped_lock (stdoutMutex);
-		std::fputs ("[Info   ] ", stdout);
+		std::fprintf (stdout, "%s [Info   ] ", currentDateTime ().c_str ());
 		std::vfprintf (stdout, format_, ap);
 		std::fflush (stdout);
 	}
@@ -137,7 +163,7 @@ void rlbot::detail::debug (char const *format_, ...) noexcept
 	va_start (ap, format_);
 	{
 		auto const lock = std::scoped_lock (stdoutMutex);
-		std::fputs ("[Debug  ] ", stdout);
+		std::fprintf (stdout, "%s [Debug  ] ", currentDateTime ().c_str ());
 		std::vfprintf (stdout, format_, ap);
 		std::fflush (stdout);
 	}
