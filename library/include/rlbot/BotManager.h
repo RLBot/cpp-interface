@@ -3,7 +3,7 @@
 #include <rlbot/Bot.h>
 
 #include <rlbot/Client.h>
-#include <rlbot/RLBotCPP.h>
+#include <rlbot/RLBot.h>
 
 #include <concepts>
 #include <memory>
@@ -19,7 +19,7 @@ class BotManagerImpl;
 
 /// @brief Bot manager base class
 /// This should only be derived by the BotManager template class below
-class RLBotCPP_API BotManagerBase : public Client
+class RLBot_API BotManagerBase : public Client
 {
 public:
 	/// @brief Destructor

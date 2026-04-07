@@ -4,6 +4,7 @@
 #include "TracyHelper.h"
 
 #include <chrono>
+#include <cinttypes>
 
 using namespace rlbot::detail;
 
@@ -77,9 +78,45 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 {
 	ZoneScopedNS ("serviceLoop", 16);
 
+	for (auto const &latency : m_pingResponses)
+		m_bot->pingResponse (latency);
+	m_pingResponses.clear ();
+
+	{
+		auto const now = std::chrono::high_resolution_clock::now ();
+
+		auto it = std::begin (m_pingRequests);
+		while (it != std::end (m_pingRequests))
+		{
+			auto const ts =
+			    std::chrono::high_resolution_clock::time_point (std::chrono::microseconds (*it));
+			if (now - ts > 5s)
+			{
+				warning ("Ping request with cookie %" PRIu64 " timed out\n", *it);
+				it = m_pingRequests.erase (it);
+			}
+			else
+				++it;
+		}
+	}
+
 	// check if any work is available
 	if (m_matchCommsIn.empty () && !m_gamePacketMessage)
+	{
+		// send ping request
+		if (m_bot->getPingRequested ())
+		{
+			auto const cookie =
+			    static_cast<std::uint64_t> (std::chrono::duration_cast<std::chrono::microseconds> (
+			        std::chrono::high_resolution_clock::now ().time_since_epoch ())
+			                                    .count ());
+
+			m_pingRequests.emplace (cookie);
+			m_connection.sendPingRequest ({.cookie = cookie});
+		}
+
 		return false;
+	}
 
 	// collect match comms
 	std::swap (m_matchCommsIn, m_matchCommsWork);
@@ -180,6 +217,19 @@ bool BotContext::serviceLoop (std::unique_lock<std::mutex> &lock_) noexcept
 		m_connection.sendDesiredGameState (std::move (gameState.value ()));
 
 	lock_.lock ();
+
+	// send ping request
+	if (m_bot->getPingRequested ())
+	{
+		auto const cookie =
+		    static_cast<std::uint64_t> (std::chrono::duration_cast<std::chrono::microseconds> (
+		        std::chrono::high_resolution_clock::now ().time_since_epoch ())
+		                                    .count ());
+
+		m_pingRequests.emplace (cookie);
+		m_connection.sendPingRequest ({.cookie = cookie});
+	}
+
 	return true;
 }
 
@@ -242,6 +292,34 @@ void rlbot::detail::BotContext::addMatchComm (Message matchComm_, bool const not
 		m_cv.notify_one ();
 }
 
+void BotContext::pingResponse (Message pingResponse_, bool const notify_) noexcept
+{
+	auto const now = std::chrono::high_resolution_clock::now ();
+
+	assert (pingResponse_.corePacket (true));
+	assert (pingResponse_.corePacket ()->message_type () == rlbot::flat::CoreMessage::PingResponse);
+
+	auto const response = pingResponse_.corePacket ()->message_as_PingResponse ();
+	assert (response);
+
+	{
+		auto const lock = std::scoped_lock (m_mutex);
+
+		auto const it = m_pingRequests.find (response->cookie ());
+		if (it == m_pingRequests.end ())
+			return;
+
+		auto const ts =
+		    std::chrono::high_resolution_clock::time_point (std::chrono::microseconds (*it));
+		m_pingResponses.emplace_back (
+		    std::chrono::duration_cast<std::chrono::microseconds> (now - ts));
+		m_pingRequests.erase (it);
+	}
+
+	if (notify_)
+		m_cv.notify_one ();
+}
+
 void BotContext::service () noexcept
 {
 #ifdef TRACY_ENABLE
@@ -256,7 +334,7 @@ void BotContext::service () noexcept
 
 	while (!m_quit.load (std::memory_order_relaxed))
 	{
-		// wait for a processable game packet, match comms, or quit
+		// wait for a processable game packet, match comms, ping response, or quit
 		auto lock = std::unique_lock (m_mutex);
 		while (!serviceLoop (lock) && !m_quit.load (std::memory_order_relaxed))
 		{

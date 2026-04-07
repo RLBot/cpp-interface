@@ -15,15 +15,15 @@ target_sources(${PROJECT_NAME} PRIVATE
 
 if(LTO_SUPPORTED)
 	set_target_properties(${PROJECT_NAME} PROPERTIES
-		INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_CPP_ENABLE_LTO}>
+		INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_ENABLE_LTO}>
 		INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
 	)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE RLBotCPP-static)
+target_link_libraries(${PROJECT_NAME} PRIVATE RLBot::static)
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different  $<TARGET_FILE:${PROJECT_NAME}> ${CMAKE_CURRENT_SOURCE_DIR}
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/ExampleBot.bot.toml ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 ###########################################################################
@@ -35,15 +35,11 @@ target_sources(${PROJECT_NAME}-Launcher PRIVATE
 	launcher.cpp
 )
 
-target_link_libraries(${PROJECT_NAME}-Launcher PRIVATE RLBotCPP-static)
+target_link_libraries(${PROJECT_NAME}-Launcher PRIVATE RLBot::static)
 
 if(LTO_SUPPORTED)
 	set_target_properties(${PROJECT_NAME}-Launcher PROPERTIES
-		INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_CPP_ENABLE_LTO}>
+		INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_ENABLE_LTO}>
 		INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
 	)
 endif()
-
-add_custom_command(TARGET ${PROJECT_NAME}-Launcher POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different  $<TARGET_FILE:${PROJECT_NAME}-Launcher> ${CMAKE_CURRENT_SOURCE_DIR}
-)

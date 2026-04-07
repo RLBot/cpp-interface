@@ -1,10 +1,12 @@
 #pragma once
 
-#include <rlbot/RLBotCPP.h>
+#include <rlbot/RLBot.h>
 
 #include <corepacket_generated.h>
 #include <interfacepacket_generated.h>
 
+#include <chrono>
+#include <cstdint>
 #include <memory>
 
 namespace rlbot
@@ -15,7 +17,7 @@ class ClientImpl;
 class Message;
 }
 
-class RLBotCPP_API Client
+class RLBot_API Client
 {
 public:
 	virtual ~Client () noexcept;
@@ -100,7 +102,14 @@ public:
 	/// @param packet_ Packet to send
 	void sendRenderingStatus (rlbot::flat::RenderingStatusT packet_) noexcept;
 
-private:
+	/// @brief Send PingRequest
+	/// @param packet_ Packet to send
+	void sendPingRequest (rlbot::flat::PingRequestT packet_) noexcept;
+
+	/// @brief Send PingRequest
+	/// @param packet_ Packet to send
+	void sendPingResponse (rlbot::flat::PingResponseT packet_) noexcept;
+
 	/// @brief Handle message
 	/// @param message_ Message to handle
 	virtual void handleMessage (detail::Message &message_) noexcept;
@@ -142,6 +151,14 @@ private:
 	/// @param packet_ Packet to handle
 	virtual void handleRenderingStatus (rlbot::flat::RenderingStatus const *packet_) noexcept;
 
+	/// @brief Handle ping request
+	virtual void handlePingRequest (rlbot::flat::PingRequest const *packet_) noexcept;
+
+	/// @brief Handle ping response
+	/// @param packet_ Packet to handle
+	virtual void handlePingResponse (rlbot::flat::PingResponse const *packet_) noexcept;
+
+private:
 	/// @brief Service thread
 	void serviceThread () noexcept;
 

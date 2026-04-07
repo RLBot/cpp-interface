@@ -47,6 +47,10 @@ SockAddr const SockAddr::AnyIPv4{inaddr_any};
 
 SockAddr const SockAddr::AnyIPv6{in6addr_any};
 
+SockAddr const SockAddr::LoopbackIPv4{fromAddr (htonl (INADDR_LOOPBACK))};
+
+SockAddr const SockAddr::LoopbackIPv6{in6addr_loopback};
+
 SockAddr::~SockAddr () noexcept = default;
 
 SockAddr::SockAddr () noexcept = default;
@@ -281,6 +285,15 @@ void SockAddr::setPort (std::uint16_t const port_) noexcept
 	default:
 		std::abort ();
 	}
+}
+
+SockAddr SockAddr::withPort (std::uint16_t const port_) const noexcept
+{
+	SockAddr copy = *this;
+
+	copy.setPort (port_);
+
+	return copy;
 }
 
 SockAddr::Domain SockAddr::domain () const noexcept

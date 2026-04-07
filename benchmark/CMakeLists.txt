@@ -28,7 +28,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	Simulator.h
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE RLBotCPP-static RocketSim)
+target_link_libraries(${PROJECT_NAME} PRIVATE RLBot::static RocketSim)
 
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
 	../library
@@ -46,7 +46,7 @@ if(WIN32)
 			WIN32_LEAN_AND_MEAN
 			_CRT_SECURE_NO_DEPRECATE
 			_CRT_SECURE_NO_WARNINGS
-			_WIN32_WINNT=_WIN32_WINNT_WINBLUE
+			_WIN32_WINNT=0x0603
 	)
 endif()
 
@@ -92,7 +92,7 @@ else()
 	)
 endif()
 
-if(RLBOT_CPP_ENABLE_TRACY)
+if(RLBOT_ENABLE_TRACY)
 	target_compile_definitions(${PROJECT_NAME} PUBLIC TRACY_ENABLE)
 	target_sources(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public/TracyClient.cpp)
 endif()
@@ -104,7 +104,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
 
 if(LTO_SUPPORTED)
 	set_target_properties(${PROJECT_NAME} PROPERTIES
-		INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_CPP_ENABLE_LTO}>
+		INTERPROCEDURAL_OPTIMIZATION $<BOOL:${RLBOT_ENABLE_LTO}>
 		INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
 	)
 endif()

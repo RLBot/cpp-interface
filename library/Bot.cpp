@@ -27,6 +27,11 @@ void Bot::matchComm (rlbot::flat::MatchComm const *const matchComm_) noexcept
 	(void)matchComm_;
 }
 
+void Bot::pingResponse (std::chrono::microseconds const latency_) noexcept
+{
+	(void)latency_;
+}
+
 std::optional<rlbot::flat::PlayerLoadoutT> Bot::getLoadout (unsigned const index_) noexcept
 {
 	// no loadout
@@ -34,20 +39,13 @@ std::optional<rlbot::flat::PlayerLoadoutT> Bot::getLoadout (unsigned const index
 	return std::nullopt;
 }
 
-std::optional<std::deque<rlbot::flat::MatchCommT>> Bot::getMatchComms () noexcept
+std::optional<std::vector<rlbot::flat::MatchCommT>> Bot::getMatchComms () noexcept
 {
-	std::optional<std::deque<rlbot::flat::MatchCommT>> result;
+	auto const lock = std::scoped_lock (m_mutex);
+	if (m_matchComms.empty ())
+		return std::nullopt;
 
-	{
-		auto const lock = std::scoped_lock (m_mutex);
-		if (!m_matchComms.has_value ())
-			return std::nullopt;
-
-		result = std::move (m_matchComms);
-		m_matchComms.reset ();
-	}
-
-	return result;
+	return std::move (m_matchComms);
 }
 
 std::optional<rlbot::flat::DesiredGameStateT> Bot::getDesiredGameState () noexcept
@@ -82,6 +80,17 @@ std::optional<std::unordered_map<int, std::vector<rlbot::flat::RenderMessageT>>>
 	return result;
 }
 
+bool rlbot::Bot::getPingRequested () noexcept
+{
+	auto const lock = std::scoped_lock (m_mutex);
+
+	auto const requested = m_pingRequested;
+
+	m_pingRequested = false;
+
+	return requested;
+}
+
 void rlbot::Bot::setOutput (unsigned index_, rlbot::flat::ControllerState const &output_) noexcept
 {
 	if (!indices.contains (index_))
@@ -101,16 +110,20 @@ void Bot::sendMatchComm (unsigned const index_,
 
 	auto const lock = std::scoped_lock (m_mutex);
 
-	if (!m_matchComms.has_value ())
-		m_matchComms.emplace ();
-
-	auto &matchComm = m_matchComms->emplace_back ();
+	auto &matchComm = m_matchComms.emplace_back ();
 
 	matchComm.index     = index_;
 	matchComm.team      = team;
 	matchComm.team_only = teamOnly_;
 	matchComm.display   = std::move (display_);
 	matchComm.content   = std::move (data_);
+}
+
+void Bot::sendPingRequest () noexcept
+{
+	auto const lock = std::scoped_lock (m_mutex);
+
+	m_pingRequested = true;
 }
 
 void Bot::sendDesiredGameState (rlbot::flat::DesiredGameStateT gameState_) noexcept

@@ -32,9 +32,13 @@ public:
 
 	void matchComm (rlbot::flat::MatchComm const *matchComm_) noexcept override;
 
+	void pingResponse (std::chrono::microseconds latency_) noexcept override;
+
 private:
-	std::chrono::steady_clock::time_point const m_start = std::chrono::steady_clock::now ();
-	bool m_comms                                        = false;
-	bool m_rendered                                     = false;
-	bool m_stateSet                                     = false;
+	std::chrono::steady_clock::time_point m_start    = std::chrono::steady_clock::now ();
+	std::chrono::steady_clock::time_point m_lastPing = std::chrono::steady_clock::now ();
+
+	bool m_comms    = false;
+	bool m_rendered = false;
+	bool m_stateSet = false;
 };

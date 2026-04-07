@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <numbers>
-#include <thread>
 #include <unordered_set>
 using namespace std::chrono_literals;
 
@@ -64,17 +63,12 @@ void ExampleBot::initialize (rlbot::flat::ControllableTeamInfo const *controllab
 	(void)controllableTeamInfo_;
 	(void)fieldInfo_;
 	(void)matchConfiguration_;
-
-	std::this_thread::sleep_for (1s);
 }
 
 void ExampleBot::update (rlbot::flat::GamePacket const *const packet_,
     rlbot::flat::BallPrediction const *const ballPrediction_) noexcept
 {
 	auto const now = std::chrono::steady_clock::now ();
-
-	// simulate a bot that can only keep up at 10Hz
-	// std::this_thread::sleep_for (100ms);
 
 	auto const prevComms    = m_comms;
 	auto const prevRendered = m_rendered;
@@ -155,6 +149,12 @@ void ExampleBot::update (rlbot::flat::GamePacket const *const packet_,
 
 		setOutput (index, {1.0f, steer, 0.0f, 0.0f, 0.0f, false, false, handbrake, false});
 	}
+
+	if (now - m_lastPing >= 1s)
+	{
+		sendPingRequest ();
+		m_lastPing = now;
+	}
 }
 
 void ExampleBot::matchComm (rlbot::flat::MatchComm const *const matchComm_) noexcept
@@ -167,4 +167,14 @@ void ExampleBot::matchComm (rlbot::flat::MatchComm const *const matchComm_) noex
 		    matchComm_->team (),
 		    matchComm_->index (),
 		    display->c_str ());
+}
+
+void ExampleBot::pingResponse (std::chrono::microseconds const latency_) noexcept
+{
+	char buffer[128];
+	std::snprintf (buffer,
+	    sizeof (buffer),
+	    "Ping: %.3fms",
+	    1e3 * std::chrono::duration<double> (latency_).count ());
+	sendMatchComm (std::ranges::min (indices), buffer, {}, false);
 }

@@ -607,6 +607,7 @@ void Client::sendInterfacePacket (rlbot::flat::InterfacePacketT const &packet_) 
 	{
 		auto lock          = std::unique_lock (m_impl->writerMutex);
 		m_impl->writerIdle = false;
+		debug ("Enqueue %s\n", rlbot::flat::EnumNameInterfaceMessage (packet_.message.type));
 		m_impl->outputQueue.emplace_back (std::move (buffer));
 
 		if (m_impl->outputQueue.size () == 1)
@@ -733,6 +734,18 @@ void Client::sendRenderingStatus (rlbot::flat::RenderingStatusT packet_) noexcep
 	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
 }
 
+void Client::sendPingRequest (rlbot::flat::PingRequestT packet_) noexcept
+{
+	ZoneScopedNS ("enqueue PingRequest", 16);
+	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
+}
+
+void Client::sendPingResponse (rlbot::flat::PingResponseT packet_) noexcept
+{
+	ZoneScopedNS ("enqueue PingResponse", 16);
+	sendInterfacePacket (buildInterfacePacket (std::move (packet_)));
+}
+
 void Client::handleMessage (detail::Message &message_) noexcept
 {
 	auto const packet = message_.corePacket (true);
@@ -744,8 +757,11 @@ void Client::handleMessage (detail::Message &message_) noexcept
 
 void Client::handleCorePacket (rlbot::flat::CorePacket const *const packet_) noexcept
 {
+	debug ("Received %s\n", rlbot::flat::EnumNameCoreMessage (packet_->message_type ()));
+
 	switch (packet_->message_type ())
 	{
+	case rlbot::flat::CoreMessage::NONE:
 	case rlbot::flat::CoreMessage::DisconnectSignal:
 		handleDisconnectSignal (packet_->message_as_DisconnectSignal ());
 		break;
@@ -778,8 +794,12 @@ void Client::handleCorePacket (rlbot::flat::CorePacket const *const packet_) noe
 		handleRenderingStatus (packet_->message_as_RenderingStatus ());
 		break;
 
-	default:
-		// Unknown packet type
+	case rlbot::flat::CoreMessage::PingRequest:
+		handlePingRequest (packet_->message_as_PingRequest ());
+		break;
+
+	case rlbot::flat::CoreMessage::PingResponse:
+		handlePingResponse (packet_->message_as_PingResponse ());
 		break;
 	}
 }
@@ -984,6 +1004,16 @@ void Client::handleRead (std::size_t count_) noexcept
 	}
 
 	m_impl->requestRead ();
+}
+
+void Client::handlePingRequest (rlbot::flat::PingRequest const *const packet_) noexcept
+{
+	sendPingResponse ({.cookie = packet_->cookie ()});
+}
+
+void Client::handlePingResponse (rlbot::flat::PingResponse const *const packet_) noexcept
+{
+	(void)packet_;
 }
 
 void Client::handleWrite (std::size_t count_) noexcept
