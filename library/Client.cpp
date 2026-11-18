@@ -539,14 +539,18 @@ bool Client::connect (char const *const host_, char const *const service_) noexc
 			iov.iov_len  = buffer->size ();
 
 			buffer.setTag (i);
-			buffer.setPreferred (true);
 		}
 
 		auto const rc = io_uring_register_buffers (&m_impl->ring, iovs.data (), iovs.size ());
 		if (rc < 0)
 		{
-			error ("io_uring_register_buffers: %s\n", std::strerror (-rc));
-			return false;
+			warning ("io_uring_register_buffers: %s; using unregistered buffers\n",
+			    std::strerror (-rc));
+		}
+		else
+		{
+			for (auto &buffer : buffers)
+				buffer.setPreferred (true);
 		}
 	}
 #endif
